@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "main_image" varchar(2555) DEFAULT '' NOT NULL;

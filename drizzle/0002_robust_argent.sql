@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ALTER COLUMN "main_image" DROP DEFAULT;
