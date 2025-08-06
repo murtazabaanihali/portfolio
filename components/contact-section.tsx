@@ -26,7 +26,14 @@ export default function ContactSection() {
         e.preventDefault();
         setIsSubmitting(true);
 
-        const sent = await contactMe(new FormData(e.target as any));
+        const form = new FormData(e.target as any);
+
+        // @ts-ignore
+        umami?.track?.("contact-form-submitted", {
+            ...Object.fromEntries(form.entries()),
+        });
+
+        const sent = await contactMe(form);
         if (sent?.error) toast.error(sent.error);
         if (sent?.success) toast.success(sent.success);
 
@@ -165,6 +172,7 @@ export default function ContactSection() {
                                                 size={"icon"}
                                                 variant={"ghost"}
                                                 className="rounded-full"
+                                                data-umami-event={item.title}
                                             >
                                                 <item.icon />
                                             </Button>

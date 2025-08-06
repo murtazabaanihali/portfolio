@@ -108,7 +108,21 @@ export const ProjectsClientSide = ({ projects }: Props) => {
                                     key={project.id}
                                     href={`/projects/${project.slug}`}
                                 >
-                                    <Card className="group hover:shadow-lg transition-all duration-300 hover:-translate-y-1 cursor-pointer h-full">
+                                    <Card
+                                        className="group hover:shadow-lg transition-all duration-300 hover:-translate-y-1 cursor-pointer h-full"
+                                        onClick={() =>
+                                            // @ts-ignore
+                                            umami &&
+                                            // @ts-ignore
+                                            umami.track(
+                                                `Project Clicked: ${project.slug}`,
+                                                {
+                                                    title: project.title,
+                                                    slug: project.slug,
+                                                }
+                                            )
+                                        }
+                                    >
                                         <div className="aspect-video relative overflow-hidden rounded-t-lg">
                                             <Image
                                                 src={getImageFullURL(
@@ -160,13 +174,15 @@ export const ProjectsClientSide = ({ projects }: Props) => {
                             ))}
                         </div>
                         <div className="mt-8 mx-auto flex justify-center">
-                            {pageNumber !== 0 && <Button
-                                variant={"secondary"}
-                                onClick={loadMore}
-                                disabled={loading || pageNumber === 0}
-                            >
-                                {loading ? "Loading..." : "Load more"}
-                            </Button>}
+                            {pageNumber !== 0 && (
+                                <Button
+                                    variant={"secondary"}
+                                    onClick={loadMore}
+                                    disabled={loading || pageNumber === 0}
+                                >
+                                    {loading ? "Loading..." : "Load more"}
+                                </Button>
+                            )}
                         </div>
                     </div>
                 ) : (

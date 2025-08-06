@@ -1,10 +1,11 @@
+import Script from "next/script";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 
-import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
-import { Navigation } from "@/components/navigation"
-import { Footer } from "@/components/footer"
+import "./globals.css";
+import { ThemeProvider } from "@/components/theme-provider";
+import { Navigation } from "@/components/navigation";
+import { Footer } from "@/components/footer";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -17,12 +18,21 @@ export const metadata: Metadata = {
 export default function RootLayout({
     children,
 }: {
-    children: React.ReactNode
+    children: React.ReactNode;
 }) {
     return (
         <html lang="en" suppressHydrationWarning>
+            <Script
+                async
+                src="/tk.js"
+                data-website-id={process.env.ANALYTICS_WEBSITE_ID}
+            />
             <body className={inter.className}>
-                <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+                <ThemeProvider
+                    attribute="class"
+                    defaultTheme="system"
+                    enableSystem
+                >
                     <Navigation />
                     {children}
                     <Footer />
@@ -30,4 +40,4 @@ export default function RootLayout({
             </body>
         </html>
     );
-};
+}

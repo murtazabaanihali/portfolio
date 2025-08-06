@@ -54,6 +54,7 @@ export function Footer() {
                                         variant="ghost"
                                         size="icon"
                                         className="rounded-full hover:bg-muted"
+                                        data-umami-event={item.title}
                                     >
                                         <item.icon />
                                     </Button>
@@ -77,4 +78,4 @@ export function Footer() {
             </div>
         </footer>
     );
-};
+}
