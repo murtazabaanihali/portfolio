@@ -2,7 +2,7 @@
 
 import { getProjectBySlugDB, getProjectsDB } from "@/lib/db/queries";
 import { ProjectTag } from "@/lib/db/schema";
-import { sendMail } from "@/lib/resend";
+import { sendContactMail } from "@/lib/resend";
 
 export const contactMe = async (form: FormData) => {
     try {
@@ -19,7 +19,7 @@ export const contactMe = async (form: FormData) => {
         if (!subject) return { error: "Please enter valid subject." };
         if (!message) return { error: "Please enter valid message." };
 
-        await sendMail(email);
+        await sendContactMail({ name, email, subject, message });
         return {
             success: "Thank you for your message. I'll get back to you soon!",
         };

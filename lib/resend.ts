@@ -3,9 +3,19 @@ import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-export const sendMail = async (to: string | null, from?: string) => {
-    const _from = from || process.env.EMAIL_SENDER;
-    const _to = to || process.env.EMAIL_SENDER;
+export const sendContactMail = async ({
+    name,
+    email,
+    subject,
+    message,
+}: {
+    name: string;
+    email: string;
+    subject: string;
+    message: string;
+}) => {
+    const _from = process.env.EMAIL_SENDER;
+    const _to = process.env.NEXT_PUBLIC_CONTACT_EMAIL;
 
     if (!_from || !_to) {
         throw new Error(
@@ -13,11 +23,19 @@ export const sendMail = async (to: string | null, from?: string) => {
         );
     };
 
+    const htmlBody = `
+        <h2>New message via your portfolio contact form</h2>
+        <p><strong>Name:</strong> ${name}</p>
+        <p><strong>Email:</strong> ${email}</p>
+        <p><strong>Subject:</strong> ${subject}</p>
+        <p><strong>Message:</strong><br>${message.replace(/\n/g, "<br>")}</p>
+    `;
+
     const { error, data } = await resend.emails.send({
-        from: _from!,
-        to: _to!,
-        subject: "Someone contacted you",
-        html: "Body",
+        from: _from,
+        to: _to,
+        subject: `New portfolio contact: ${subject}`,
+        html: htmlBody,
     });
 
     if (error) {
@@ -26,7 +44,7 @@ export const sendMail = async (to: string | null, from?: string) => {
             "From: ",
             _from,
             "TO: ",
-            to
+            _to
         );
     };
 
