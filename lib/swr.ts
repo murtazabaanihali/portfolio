@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import useSWRInfinite from "swr/infinite";
 
 import { getProjects } from "@/actions";
@@ -8,6 +8,7 @@ export const useProjects = (
     firstPage?: Awaited<ReturnType<typeof getProjects>>
 ) => {
     const [tag, setTag] = useState<ProjectTag | undefined>();
+    const firstPageRef = useRef(firstPage);
 
     const getKey = (pageIndex: number, previousPageData: any) => {
         if (pageIndex === 0) return ["projects", 1, tag];
@@ -19,11 +20,13 @@ export const useProjects = (
         return getProjects(pageNumber, tag);
     };
 
-    const { data, isLoading, isValidating, size, setSize } =
+    const { data, isLoading, isValidating, size, setSize, mutate } =
         useSWRInfinite(getKey, fetcher, {
             revalidateOnFocus: false,
             revalidateFirstPage: false,
-            fallbackData: firstPage ? [firstPage] : undefined,
+            fallbackData: firstPageRef.current
+                ? [firstPageRef.current]
+                : undefined,
         });
 
     const flattenedData = useMemo(() => {
@@ -44,6 +47,7 @@ export const useProjects = (
     };
 
     const onTag = (tag?: ProjectTag) => {
+        firstPageRef.current = undefined;
         setTag(tag);
         setSize(1);
     };
