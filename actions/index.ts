@@ -35,7 +35,7 @@ export const getProjects = async (pageNumber: number = 1, tag?: ProjectTag) => {
         return { projects, more: projects?.length >= 12 };
     } catch (error) {
         console.log("Error getting projects ", error);
-        return null;
+        return { projects: [], more: false };
     }
 };
 

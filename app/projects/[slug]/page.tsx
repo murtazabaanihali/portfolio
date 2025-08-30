@@ -54,7 +54,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     const project = await getProjectBySlug(params.slug);
 
     if (!project) {
-        notFound();
+        return notFound();
     };
 
     return (

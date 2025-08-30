@@ -6,7 +6,7 @@ export default async function ProjectsPage() {
 
     return (
         <main className="min-h-screen pt-40 md:pt-52 pb-20">
-            <ProjectsClientSide projects={projects} />
+            <ProjectsClientSide _data={projects} />
         </main>
     );
 };

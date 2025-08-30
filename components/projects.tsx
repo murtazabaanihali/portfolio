@@ -1,7 +1,6 @@
 "use client";
 
 import { Sparkles, Filter } from "lucide-react";
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -13,49 +12,19 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { Project } from "@/lib/db/queries";
-import { getProjects } from "@/actions";
+import { type getProjects } from "@/actions";
 import { Button } from "@/components/ui/button";
 import { PROJECT_FILTER_MAP } from "@/components/constant";
 import { getImageFullURL } from "@/lib/utils";
+import { useProjects } from "@/lib/swr";
 
 interface Props {
-    projects?: {
-        projects?: Project[] | null;
-        more: boolean;
-    } | null;
+    _data?: Awaited<ReturnType<typeof getProjects>>;
 }
 
-export const ProjectsClientSide = ({ projects }: Props) => {
-    const [_projects, setProjects] = useState(projects?.projects);
-    const [pageNumber, setPageNumber] = useState(1);
-    const [loading, setLoading] = useState(true);
-    const [tag, setTag] = useState<string>();
-
-    const loadMore = async () => {
-        if (loading || pageNumber === 0) return;
-        setLoading(true);
-
-        const more = await getProjects(pageNumber, tag as any);
-        setProjects((prev) => [...(prev?.concat(more?.projects || []) || [])]);
-        setPageNumber((prev) => (more?.more ? prev + 1 : 0));
-        setLoading(false);
-    };
-
-    const onTag = (tag?: string) => {
-        setPageNumber(1);
-        setProjects([]);
-        setTag(tag);
-    };
-
-    useEffect(() => {
-        setLoading(false);
-        if (!projects?.more) setPageNumber(0);
-    }, []);
-
-    useEffect(() => {
-        loadMore();
-    }, [tag]);
+export const ProjectsClientSide = ({ _data }: Props) => {
+    const { data, isValidating, isLoading, loadMore, tag, onTag } =
+        useProjects(_data);
 
     return (
         <div className="container mx-auto px-4">
@@ -88,7 +57,7 @@ export const ProjectsClientSide = ({ projects }: Props) => {
                             size="sm"
                             variant={tag === entry[0] ? "default" : "ghost"}
                             className="rounded-full"
-                            onClick={() => onTag(entry[0])}
+                            onClick={() => onTag(entry[0] as any)}
                         >
                             {entry[1]}
                         </Button>
@@ -97,13 +66,13 @@ export const ProjectsClientSide = ({ projects }: Props) => {
             </div>
 
             <div>
-                {_projects?.length ? (
+                {data?.projects?.length ? (
                     <div>
                         <div
                             id="projects"
                             className="grid md:grid-cols-2 lg:grid-cols-3 gap-8"
                         >
-                            {_projects.map((project) => (
+                            {data?.projects.map((project) => (
                                 <Link
                                     key={project.id}
                                     href={`/projects/${project.slug}`}
@@ -112,9 +81,9 @@ export const ProjectsClientSide = ({ projects }: Props) => {
                                         className="group hover:shadow-lg transition-all duration-300 hover:-translate-y-1 cursor-pointer h-full"
                                         onClick={() =>
                                             // @ts-ignore
-                                            umami &&
+                                            window?.umami &&
                                             // @ts-ignore
-                                            umami.track(
+                                            window?.umami.track(
                                                 `Project Clicked: ${project.slug}`,
                                                 {
                                                     title: project.title,
@@ -174,20 +143,18 @@ export const ProjectsClientSide = ({ projects }: Props) => {
                             ))}
                         </div>
                         <div className="mt-8 mx-auto flex justify-center">
-                            {pageNumber !== 0 && (
-                                <Button
-                                    variant={"secondary"}
-                                    onClick={loadMore}
-                                    disabled={loading || pageNumber === 0}
-                                >
-                                    {loading ? "Loading..." : "Load more"}
-                                </Button>
-                            )}
+                            {!!data.more && <Button
+                                variant={"secondary"}
+                                onClick={loadMore}
+                                disabled={isValidating || isLoading}
+                            >
+                                {(isValidating || isLoading) ? "Loading..." : "Load more"}
+                            </Button>}
                         </div>
                     </div>
                 ) : (
                     <p className="mt-5 text-center font-semibold w-fit mx-auto">
-                        {loading ? "Loading..." : "No projects found."}
+                        {(isValidating || isLoading) ? "Loading..." : "No projects found."}
                     </p>
                 )}
             </div>
