@@ -19,11 +19,10 @@ export function HeroSection() {
                 </h1>
 
                 <p className="text-lg md:text-xl text-muted-foreground mb-12 max-w-3xl mx-auto leading-relaxed">
-                    I’m a Full Stack Developer who takes care of everything from
-                    building to launching apps. I create easy-to-use web,
-                    mobile, and desktop applications with clean code and
-                    solutions that grow with you. Let’s create something great
-                    together!
+                    I am a full-stack developer who loves turning ideas into
+                    real applications. Over the years, I have built web and
+                    mobile products that focus on being simple to use and
+                    flexible enough to grow with you.
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">

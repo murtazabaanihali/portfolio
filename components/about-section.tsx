@@ -93,10 +93,36 @@ export function AboutSection() {
                                     offer the best solutions I can. Whether you
                                     need a fresh app, a bit of support, or
                                     someone to brainstorm with, I’m here to
-                                    help—let’s build something amazing
-                                    together!
+                                    help—let’s build something amazing together!
                                 </p>
-                            </div>  
+                                <p className="[&>a]:font-medium [&>a]:underline [&>a]:underline-offset-4">
+                                    I am also founder of{" "}
+                                    <a
+                                        target="_blank"
+                                        href="https://ireplyy.dhem.io/"
+                                    >
+                                        iReplyy
+                                    </a>
+                                    ,{" "}
+                                    <a
+                                        target="_blank"
+                                        href="https://dhesend.vercel.app/"
+                                    >
+                                        Dhesend
+                                    </a>
+                                    , and{" "}
+                                    <a
+                                        target="_blank"
+                                        href="https://dhegen.com/"
+                                    >
+                                        DheGEN
+                                    </a>{" "}
+                                    — each one tackling different challenges
+                                    I've seen people face. It's been a rewarding
+                                    journey creating tools that actually make a
+                                    difference.
+                                </p>
+                            </div>
                         </div>
 
                         <div className="flex flex-wrap gap-3 mx-0 my-0 py-2.5">
