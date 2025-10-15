@@ -72,7 +72,7 @@ export function Footer() {
                     <span className="flex items-center gap-1">
                         Made with{" "}
                         <Heart className="h-4 w-4 text-red-500 fill-current" />{" "}
-                        using Next.js
+                        by me.
                     </span>
                 </div>
             </div>
