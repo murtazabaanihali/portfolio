@@ -30,12 +30,13 @@ import {
     Electron,
     GitHubDark,
     LinkedIn,
-    Twitter,
     Facebook,
     Instagram,
     XDark,
+    Kubernetes,
+    HTML5,
 } from "developer-icons";
-import { ChevronUp, Workflow } from "lucide-react";
+import { ChevronUp, Database, Workflow } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { ProjectTag } from "@/lib/db/schema";
@@ -56,12 +57,7 @@ const ReplicateIcon = ({ ...props }: any) => {
 };
 
 export const GithubIcon = ({ className, ...props }: any) => {
-    return (
-        <GitHubDark
-            className={cn(className, "[&>path]:fill-foreground")}
-            {...props}
-        />
-    );
+    return <GitHubDark className={cn(className, "[&>path]:fill-foreground")} {...props} />;
 };
 
 export const SKILL_CATEGORIES = [
@@ -69,6 +65,12 @@ export const SKILL_CATEGORIES = [
         title: "Frontend Development",
         gradient: "from-blue-500 to-cyan-500",
         skills: [
+            { name: "HTML & CSS", icon: HTML5, url: "https://html.com" },
+            {
+                name: "JavaScript",
+                icon: JavaScript,
+                url: "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
+            },
             { name: "React", icon: React, url: "https://react.dev" },
             { name: "Next.js", icon: NextJs, url: "https://nextjs.org" },
             { name: "Vue.js", icon: VueJs, url: "https://vuejs.org" },
@@ -76,16 +78,6 @@ export const SKILL_CATEGORIES = [
                 name: "TypeScript",
                 icon: TypeScript,
                 url: "https://www.typescriptlang.org",
-            },
-            {
-                name: "JavaScript",
-                icon: JavaScript,
-                url: "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
-            },
-            {
-                name: "Tailwind CSS",
-                icon: TailwindCSS,
-                url: "https://tailwindcss.com",
             },
         ],
     },
@@ -125,28 +117,6 @@ export const SKILL_CATEGORIES = [
         ],
     },
     {
-        title: "Mobile & Desktop Development",
-        gradient: "from-purple-500 to-pink-500",
-        skills: [
-            {
-                name: "React Native",
-                icon: React,
-                url: "https://reactnative.dev",
-            },
-            { name: "Expo", icon: ChevronUp, url: "https://expo.dev/" },
-            {
-                name: "Electron.js",
-                icon: Electron,
-                url: "https://electronjs.org/",
-            },
-            {
-                name: "Python Kivy",
-                icon: Python,
-                url: "https://kivy.org/",
-            },
-        ],
-    },
-    {
         title: "Database & Storage",
         gradient: "from-orange-500 to-red-500",
         skills: [
@@ -160,36 +130,30 @@ export const SKILL_CATEGORIES = [
                 icon: MySQL,
                 url: "https://mysql.com/",
             },
+            { name: "SQLite", icon: Database, url: "https://www.sqlite.org" },
             { name: "MongoDB", icon: MongoDB, url: "https://www.mongodb.com" },
             { name: "Redis", icon: Redis, url: "https://redis.io" },
             { name: "Supabase", icon: Supabase, url: "https://supabase.com" },
-            {
-                name: "Firebase",
-                icon: Firebase,
-                url: "https://firebase.google.com",
-            },
         ],
     },
     {
         title: "Cloud & DevOps",
         gradient: "from-indigo-500 to-purple-500",
         skills: [
+            { name: "Docker", icon: Docker, url: "https://www.docker.com" },
+            { name: "Kubernetes", icon: Kubernetes, url: "https://kubernetes.io" },
+            {
+                name: "CI/CD",
+                icon: Workflow,
+                url: "https://github.com/features/actions",
+            },
             {
                 name: "AWS",
                 icon: ({ className, ...props }: any) => (
-                    <AWS
-                        className={cn(className, "[&>path]:fill-current")}
-                        {...props}
-                    />
+                    <AWS className={cn(className, "[&>path]:fill-current")} {...props} />
                 ),
                 url: "https://aws.amazon.com",
             },
-            {
-                name: "Google Cloud",
-                icon: GoogleCloud,
-                url: "https://cloud.google.com",
-            },
-            { name: "Docker", icon: Docker, url: "https://www.docker.com" },
             {
                 name: "Vercel",
                 icon: ({ className, ...props }: any) => (
@@ -211,11 +175,6 @@ export const SKILL_CATEGORIES = [
                     />
                 ),
                 url: "https://render.com/",
-            },
-            {
-                name: "CI/CD",
-                icon: Workflow,
-                url: "https://github.com/features/actions",
             },
         ],
     },
@@ -251,6 +210,28 @@ export const SKILL_CATEGORIES = [
             { name: "OpenAI", icon: ChatGPT, url: "https://openai.com" },
         ],
     },
+    {
+        title: "Mobile & Desktop Development",
+        gradient: "from-purple-500 to-pink-500",
+        skills: [
+            {
+                name: "React Native",
+                icon: React,
+                url: "https://reactnative.dev",
+            },
+            { name: "Expo", icon: ChevronUp, url: "https://expo.dev/" },
+            {
+                name: "Electron.js",
+                icon: Electron,
+                url: "https://electronjs.org/",
+            },
+            {
+                name: "Python Kivy",
+                icon: Python,
+                url: "https://kivy.org/",
+            },
+        ],
+    },
 ];
 
 export const NAVIGATION_ITEMS = [
@@ -273,10 +254,7 @@ export const SOCIAL_LINKS = [
     },
     {
         icon: ({ className, ...props }: any) => (
-            <XDark
-                className={cn(className, "[&>path]:fill-foreground")}
-                {...props}
-            />
+            <XDark className={cn(className, "[&>path]:fill-foreground")} {...props} />
         ),
         link: "https://x.com/murtazabanihali",
         title: "Twitter",
@@ -305,7 +283,5 @@ export const PROJECT_FILTER_MAP: Partial<Record<ProjectTag, string>> = {
 export const ABOUT_SECTION_BADGES = [
     "⚡ Rapid Adaptor",
     "🧠 Strategic Thinker",
-    "🔍 Detail Oriented",
-    "🤖 AI Visionary",
     "🔥 Peak Performer",
 ];

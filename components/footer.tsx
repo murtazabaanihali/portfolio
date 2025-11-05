@@ -17,8 +17,7 @@ export function Footer() {
                             Murtaza Baanihali
                         </Link>
                         <p className="text-muted-foreground mt-2 max-w-xs text-sm">
-                            Full-stack developer passionate about exceptional
-                            digital experiences, AI, and modern tech.
+                            Full-stack developer & founder.
                         </p>
                     </div>
 

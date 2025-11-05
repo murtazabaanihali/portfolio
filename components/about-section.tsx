@@ -14,8 +14,7 @@ export function AboutSection() {
                         About Me
                     </h2>
                     <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-                        I love building digital experiences that truly help
-                        people.
+                        I love building digital experiences that truly help people.
                     </p>
                 </div>
 
@@ -27,11 +26,7 @@ export function AboutSection() {
                             <div className="relative z-10 h-full flex items-center justify-center">
                                 <div className="text-center flex flex-col items-center justify-center gap-3">
                                     <Avatar className="size-64">
-                                        <AvatarImage
-                                            src={getImageFullURL(
-                                                "profile-pic.jpeg"
-                                            )}
-                                        />
+                                        <AvatarImage src={getImageFullURL("profile-pic.jpeg")} />
                                         <AvatarFallback className="text-6xl font-bold text-white bg-gradient-to-br from-violet-500 to-purple-600">
                                             MB
                                         </AvatarFallback>
@@ -46,9 +41,7 @@ export function AboutSection() {
 
                     <div className="order-1 md:order-2 space-y-10">
                         <div>
-                            <h3 className="text-3xl font-bold mb-8">
-                                Hello, I'm Murtaza! 👋
-                            </h3>
+                            <h3 className="text-3xl font-bold mb-8">Hello, I'm Murtaza! 👋</h3>
                             <div className="md:hidden mb-6">
                                 <Card className="aspect-square max-w-lg mx-auto relative overflow-hidden group bg-gradient-to-br from-muted/50 to-muted">
                                     <div className="absolute inset-0 bg-gradient-to-br from-violet-500/20 via-purple-500/20 to-blue-500/20 group-hover:scale-110 transition-transform duration-700" />
@@ -57,17 +50,14 @@ export function AboutSection() {
                                         <div className="text-center flex flex-col items-center justify-center gap-3">
                                             <Avatar className="size-64">
                                                 <AvatarImage
-                                                    src={getImageFullURL(
-                                                        "profile-pic.jpeg"
-                                                    )}
+                                                    src={getImageFullURL("profile-pic.jpeg")}
                                                 />
                                                 <AvatarFallback className="text-6xl font-bold text-white bg-gradient-to-br from-violet-500 to-purple-600">
                                                     MB
                                                 </AvatarFallback>
                                             </Avatar>
                                             <p className="text-muted-foreground font-medium">
-                                                Professional full-stack
-                                                Developer
+                                                Professional full-stack Developer
                                             </p>
                                         </div>
                                     </div>
@@ -75,52 +65,32 @@ export function AboutSection() {
                             </div>
                             <div className="space-y-4 text-lg leading-relaxed">
                                 <p>
-                                    Hello! I’m a full-stack developer with
-                                    several years of hands-on experience turning
-                                    ideas into working apps. I enjoy building
-                                    both web and mobile projects that are
-                                    efficient, simple to use, and can easily
-                                    grow with your needs. My journey also
-                                    includes working with AI and new
-                                    technologies, which keeps things fun and
-                                    exciting.
+                                    I’m Murtaza, a full‑stack developer who turns ideas into shipped
+                                    products. I build for web and mobile with a focus on
+                                    performance, accessibility, and a clean user experience.
                                 </p>
                                 <p>
-                                    I care about writing clear, reliable code
-                                    and making every project as user-friendly as
-                                    possible. I'm always curious and keep
-                                    learning new things to stay updated and
-                                    offer the best solutions I can. Whether you
-                                    need a fresh app, a bit of support, or
-                                    someone to brainstorm with, I’m here to
-                                    help—let’s build something amazing together!
+                                    I work end‑to‑end—scoping, UX, code, testing, and launch. I
+                                    prefer pragmatic choices, thoughtful defaults, and clear,
+                                    maintainable code. If you’re exploring a new idea or growing an
+                                    existing product, I can help.
                                 </p>
                                 <p className="[&>a]:font-medium [&>a]:underline [&>a]:underline-offset-4">
                                     I am also founder of{" "}
-                                    <a
-                                        target="_blank"
-                                        href="https://ireplyy.dhem.io/"
-                                    >
+                                    <a target="_blank" href="https://ireplyy.dhem.io/">
                                         iReplyy
                                     </a>
                                     ,{" "}
-                                    <a
-                                        target="_blank"
-                                        href="https://dhesend.vercel.app/"
-                                    >
+                                    <a target="_blank" href="https://dhesend.vercel.app/">
                                         Dhesend
                                     </a>
-                                    , and{" "}
-                                    <a
-                                        target="_blank"
-                                        href="https://dhegen.com/"
-                                    >
-                                        DheGEN
+                                    ,{" "}
+                                    <a target="_blank" href="https://tajven.com/">
+                                        Tajven
                                     </a>{" "}
-                                    — each one tackling different challenges
-                                    I've seen people face. It's been a rewarding
-                                    journey creating tools that actually make a
-                                    difference.
+                                    , and many other projects — each built to solve real problems
+                                    I’ve seen. It’s rewarding to ship tools that people actually
+                                    use.
                                 </p>
                             </div>
                         </div>
@@ -145,8 +115,8 @@ export function AboutSection() {
                             Technologies I Work With
                         </h3>
                         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                            Here are the modern technologies and tools I use to
-                            build great applications.
+                            Here are the modern technologies and tools I use to build great
+                            applications.
                         </p>
                     </div>
                     <SkillsGrid />

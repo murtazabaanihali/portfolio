@@ -9,9 +9,7 @@ export function HeroSection() {
             <div className="relative z-10 text-center px-4 max-w-5xl mx-auto">
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-8">
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                    <span className="text-sm font-medium">
-                        Available for new projects
-                    </span>
+                    <span className="text-sm font-medium">Available for new projects</span>
                 </div>
 
                 <h1 className="text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent">
@@ -19,10 +17,10 @@ export function HeroSection() {
                 </h1>
 
                 <p className="text-lg md:text-xl text-muted-foreground mb-12 max-w-3xl mx-auto leading-relaxed">
-                    I am a full-stack developer who loves turning ideas into
-                    real applications. Over the years, I have built web and
-                    mobile products that focus on being simple to use and
-                    flexible enough to grow with you.
+                    I am a full-stack developer who loves turning ideas into real applications. Over
+                    the years, I have built web and mobile products that focus on being simple to
+                    use and flexible enough to grow with you. With full stack developer I am also a
+                    founder of some projects like iReplyy, Dhesend, and Tajven.
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
@@ -36,11 +34,7 @@ export function HeroSection() {
                         </Button>
                     </Link>
                     <Link href={"#contact"}>
-                        <Button
-                            variant="outline"
-                            size="lg"
-                            className="text-lg px-8 py-6"
-                        >
+                        <Button variant="outline" size="lg" className="text-lg px-8 py-6">
                             <Mail className="mr-2 h-5 w-5" />
                             Get In Touch
                         </Button>
