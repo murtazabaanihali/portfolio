@@ -1,14 +1,12 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import useSWRInfinite from "swr/infinite";
 
-import { getProjects } from "@/actions";
+import { getProjectBySlug, getProjects } from "@/actions";
 import { ProjectTag } from "@/lib/db/schema";
+import useSWR from "swr";
 
-export const useProjects = (
-    firstPage?: Awaited<ReturnType<typeof getProjects>>
-) => {
+export const useProjects = () => {
     const [tag, setTag] = useState<ProjectTag | undefined>();
-    const firstPageRef = useRef(firstPage);
 
     const getKey = (pageIndex: number, previousPageData: any) => {
         if (pageIndex === 0) return ["projects", 1, tag];
@@ -24,9 +22,6 @@ export const useProjects = (
         useSWRInfinite(getKey, fetcher, {
             revalidateOnFocus: false,
             revalidateFirstPage: false,
-            fallbackData: firstPageRef.current
-                ? [firstPageRef.current]
-                : undefined,
         });
 
     const flattenedData = useMemo(() => {
@@ -47,7 +42,6 @@ export const useProjects = (
     };
 
     const onTag = (tag?: ProjectTag) => {
-        firstPageRef.current = undefined;
         setTag(tag);
         setSize(1);
     };
@@ -60,4 +54,14 @@ export const useProjects = (
         onTag,
         tag,
     };
+};
+
+export const useProjectDetails = (slug: string) => {
+    const { data, isLoading } = useSWR(
+        `project-details:${slug}`,
+        () => getProjectBySlug(slug),
+        { revalidateOnFocus: false, revalidateFirstPage: false },
+    );
+
+    return { data, isLoading };
 };

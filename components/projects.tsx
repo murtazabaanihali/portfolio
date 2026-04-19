@@ -1,6 +1,6 @@
 "use client";
 
-import { Sparkles, Filter } from "lucide-react";
+import { Filter } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -12,19 +12,14 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { type getProjects } from "@/actions";
 import { Button } from "@/components/ui/button";
 import { PROJECT_FILTER_MAP } from "@/components/constant";
 import { getImageFullURL } from "@/lib/utils";
 import { useProjects } from "@/lib/swr";
 
-interface Props {
-    _data?: Awaited<ReturnType<typeof getProjects>>;
-}
-
-export const ProjectsClientSide = ({ _data }: Props) => {
+export const ProjectsClientSide = () => {
     const { data, isValidating, isLoading, loadMore, tag, onTag } =
-        useProjects(_data);
+        useProjects();
 
     return (
         <div className="container mx-auto px-4">
@@ -84,7 +79,7 @@ export const ProjectsClientSide = ({ _data }: Props) => {
                                                 {
                                                     title: project.title,
                                                     slug: project.slug,
-                                                }
+                                                },
                                             )
                                         }
                                     >
@@ -92,7 +87,7 @@ export const ProjectsClientSide = ({ _data }: Props) => {
                                             <Image
                                                 src={getImageFullURL(
                                                     project.mainImage,
-                                                    "/placeholder.svg?height=300&width=400&query=project-screenshot"
+                                                    "/placeholder.svg?height=300&width=400&query=project-screenshot",
                                                 )}
                                                 alt={project.title}
                                                 fill
@@ -139,18 +134,24 @@ export const ProjectsClientSide = ({ _data }: Props) => {
                             ))}
                         </div>
                         <div className="mt-8 mx-auto flex justify-center">
-                            {!!data.more && <Button
-                                variant={"secondary"}
-                                onClick={loadMore}
-                                disabled={isValidating || isLoading}
-                            >
-                                {(isValidating || isLoading) ? "Loading..." : "Load more"}
-                            </Button>}
+                            {!!data.more && (
+                                <Button
+                                    variant={"secondary"}
+                                    onClick={loadMore}
+                                    disabled={isValidating || isLoading}
+                                >
+                                    {isValidating || isLoading
+                                        ? "Loading..."
+                                        : "Load more"}
+                                </Button>
+                            )}
                         </div>
                     </div>
                 ) : (
                     <p className="mt-5 text-center font-semibold w-fit mx-auto">
-                        {(isValidating || isLoading) ? "Loading..." : "No projects found."}
+                        {isValidating || isLoading
+                            ? "Loading..."
+                            : "No projects found."}
                     </p>
                 )}
             </div>

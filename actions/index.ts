@@ -1,8 +1,10 @@
 "use server";
 
-import { getProjectBySlugDB, getProjectsDB } from "@/lib/db/queries";
+import { unstable_cache } from "next/cache";
+
 import { ProjectTag } from "@/lib/db/schema";
 import { sendContactMail } from "@/lib/resend";
+import { getProjectBySlugDB, getProjectsDB } from "@/lib/db/queries";
 
 export const contactMe = async (form: FormData) => {
     try {
@@ -31,8 +33,18 @@ export const contactMe = async (form: FormData) => {
 
 export const getProjects = async (pageNumber: number = 1, tag?: ProjectTag) => {
     try {
-        const projects = await getProjectsDB(Math.max(1, pageNumber), tag, 12);
-        return { projects, more: projects?.length >= 12 };
+        return await unstable_cache(
+            async (pageNumber: number, tag: ProjectTag | undefined) => {
+                const projects = await getProjectsDB(
+                    Math.max(1, pageNumber),
+                    tag,
+                    12,
+                );
+                return { projects, more: projects?.length >= 12 };
+            },
+            ["projects"],
+            { revalidate: 3 * 3600, tags: ["projects"] },
+        )(pageNumber, tag);
     } catch (error) {
         console.log("Error getting projects ", error);
         return { projects: [], more: false };
@@ -41,7 +53,11 @@ export const getProjects = async (pageNumber: number = 1, tag?: ProjectTag) => {
 
 export const getProjectBySlug = async (slug: string) => {
     try {
-        return await getProjectBySlugDB(slug);
+        return await unstable_cache(
+            async (slug: string) => getProjectBySlugDB(slug),
+            ["project-by-slug"],
+            { revalidate: 3 * 3600, tags: ["projects"] },
+        )(slug);
     } catch (error) {
         console.log("Error getting project by slug ", error);
         return null;
