@@ -1,12 +1,7 @@
 <svg width="154" height="48" viewBox="0 0 154 48" fill="none" xmlns="http://www.w3.org/2000/svg">
   <style>
     .dhem-wordmark {
-      fill: #111111;
-    }
-    @media (prefers-color-scheme: dark) {
-      .dhem-wordmark {
-        fill: #f0f0f0;
-      }
+      fill: currentColor;
     }
   </style>
 
