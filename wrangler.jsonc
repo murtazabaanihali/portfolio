@@ -14,13 +14,6 @@
   "images": {
     "binding": "IMAGES"
   },
-  // Optional: Uncomment and set your R2 bucket name if you configure persistent caching
-  // "r2_buckets": [
-  //   {
-  //     "binding": "NEXT_INC_CACHE_R2_BUCKET",
-  //     "bucket_name": "murtaza-portfolio-cache"
-  //   }
-  // ],
   "observability": {
     "enabled": true
   }
