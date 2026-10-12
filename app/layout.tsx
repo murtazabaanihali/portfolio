@@ -73,11 +73,13 @@ export default function RootLayout({
 }) {
     return (
         <html lang="en" suppressHydrationWarning>
-            <Script
-                async
-                src="/tk.js"
-                data-website-id={process.env.ANALYTICS_WEBSITE_ID}
-            />
+            {process.env.ANALYTICS_WEBSITE_ID && (
+                <Script
+                    async
+                    src="/tk.js"
+                    data-website-id={process.env.ANALYTICS_WEBSITE_ID}
+                />
+            )}
             <body className={inter.className}>
                 <ThemeProvider
                     attribute="class"
