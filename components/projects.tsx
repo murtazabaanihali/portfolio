@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { PROJECT_FILTER_MAP } from "@/components/constant";
 import { getImageFullURL } from "@/lib/utils";
 import { useProjects } from "@/lib/swr";
+import { trackUmamiEvent } from "@/lib/analytics";
 
 export const ProjectsClientSide = () => {
     const { data, isValidating, isLoading, loadMore, tag, onTag } =
@@ -70,18 +71,19 @@ export const ProjectsClientSide = () => {
                                 >
                                     <Card
                                         className="group hover:shadow-lg transition-all duration-300 hover:-translate-y-1 cursor-pointer h-full"
-                                        onClick={() =>
-                                            // @ts-ignore
-                                            window?.umami &&
-                                            // @ts-ignore
-                                            window?.umami.track(
-                                                `Project Clicked: ${project.slug}`,
-                                                {
-                                                    title: project.title,
-                                                    slug: project.slug,
-                                                },
-                                            )
-                                        }
+                                        onClick={() => {
+                                            try {
+                                                trackUmamiEvent(
+                                                    `Project Clicked: ${project.slug}`,
+                                                    {
+                                                        title: project.title,
+                                                        slug: project.slug,
+                                                    },
+                                                );
+                                            } catch (error) {
+                                                console.warn("Umami tracking error:", error);
+                                            }
+                                        }}
                                     >
                                         <div className="aspect-video relative overflow-hidden rounded-t-lg">
                                             <Image

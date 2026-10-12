@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { SOCIAL_LINKS } from "@/components/constant";
 import { contactMe } from "@/actions";
+import { trackUmamiEvent } from "@/lib/analytics";
 
 export default function ContactSection() {
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -28,17 +29,27 @@ export default function ContactSection() {
 
         const form = new FormData(e.target as any);
 
-        // @ts-ignore
-        umami?.track?.("contact-form-submitted", {
-            ...Object.fromEntries(form.entries()),
-        });
+        // Safe Umami tracking: if analytics script is blocked or missing, do not disrupt form submission
+        try {
+            trackUmamiEvent("contact-form-submitted", {
+                ...Object.fromEntries(form.entries()),
+            });
+        } catch (error) {
+            console.warn("Umami tracking error:", error);
+        }
 
-        const sent = await contactMe(form);
-        if (sent?.error) toast.error(sent.error);
-        if (sent?.success) toast.success(sent.success);
+        try {
+            const sent = await contactMe(form);
+            if (sent?.error) toast.error(sent.error);
+            if (sent?.success) toast.success(sent.success);
 
-        setIsSubmitting(false);
-        if (sent?.success) (e.target as HTMLFormElement).reset();
+            if (sent?.success) (e.target as HTMLFormElement).reset();
+        } catch (error) {
+            console.error("Error sending contact email:", error);
+            toast.error("Failed to send message. Please try again.");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (

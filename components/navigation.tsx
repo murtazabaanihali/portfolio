@@ -29,9 +29,9 @@ export function Navigation() {
     };
 
     useEffect(() => {
-        if (window !== undefined) {
+        if (typeof window !== "undefined") {
             setActive(window.location.pathname + window.location.hash);
-        };
+        }
     }, [pathname]);
 
     return (
