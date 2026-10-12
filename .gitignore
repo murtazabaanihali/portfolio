@@ -18,6 +18,12 @@ yarn-error.log*
 
 # env files
 .env*
+.dev.vars
+
+# cloudflare / opennext
+.open-next/
+.wrangler/
+cloudflare-env.d.ts
 
 # vercel
 .vercel

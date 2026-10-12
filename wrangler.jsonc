@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "murtaza-portfolio",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2024-12-30",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "images": {
+    "binding": "IMAGES"
+  },
+  // Optional: Uncomment and set your R2 bucket name if you configure persistent caching
+  // "r2_buckets": [
+  //   {
+  //     "binding": "NEXT_INC_CACHE_R2_BUCKET",
+  //     "bucket_name": "murtaza-portfolio-cache"
+  //   }
+  // ],
+  "observability": {
+    "enabled": true
+  }
+}
