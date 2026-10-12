@@ -1,8 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "murtaza-portfolio",
+  "name": "portfolio",
   "main": ".open-next/worker.js",
-  "compatibility_date": "2024-12-30",
+  "compatibility_date": "2026-10-10",
   "compatibility_flags": [
     "nodejs_compat",
     "global_fetch_strictly_public"

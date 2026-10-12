@@ -36,6 +36,7 @@ export const sendContactMail = async ({
         to: _to,
         subject: `New portfolio contact: ${subject}`,
         html: htmlBody,
+        replyTo: email
     });
 
     if (error) {
