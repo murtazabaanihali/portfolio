@@ -292,3 +292,5 @@ export const ABOUT_SECTION_BADGES = [
     "🧠 Strategic Thinker",
     "🔥 Peak Performer",
 ];
+
+export * from "@/lib/constants";

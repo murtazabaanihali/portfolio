@@ -1,10 +1,12 @@
 "use server";
 
 import { unstable_cache } from "next/cache";
+import { headers } from "next/headers";
 
 import { ProjectTag } from "@/lib/db/schema";
 import { sendContactMail } from "@/lib/resend";
 import { getProjectBySlugDB, getProjectsDB } from "@/lib/db/queries";
+import { checkEmailRateLimit, getClientIp } from "@/lib/ratelimit";
 
 export const contactMe = async (form: FormData) => {
     try {
@@ -20,6 +22,17 @@ export const contactMe = async (form: FormData) => {
             return { error: "Please enter valid email." };
         if (!subject) return { error: "Please enter valid subject." };
         if (!message) return { error: "Please enter valid message." };
+
+        const headerList = await headers();
+        const ip = getClientIp(headerList);
+        const identifier = ip !== "127.0.0.1" ? ip : `${ip}:${email}`;
+
+        const rateLimit = await checkEmailRateLimit(identifier);
+        if (!rateLimit.success) {
+            return {
+                error: rateLimit.error || "Too many emails sent. Please try again later.",
+            };
+        }
 
         await sendContactMail({ name, email, subject, message });
         return {
