@@ -27,7 +27,7 @@ export const contactMe = async (form: FormData) => {
         const ip = getClientIp(headerList);
         const identifier = ip !== "127.0.0.1" ? ip : `${ip}:${email}`;
 
-        const rateLimit = await checkEmailRateLimit(identifier);
+        const rateLimit = await checkEmailRateLimit(`portfolio:limit:${identifier}`);
         if (!rateLimit.success) {
             return {
                 error: rateLimit.error || "Too many emails sent. Please try again later.",
