@@ -14,6 +14,9 @@
   "images": {
     "binding": "IMAGES"
   },
+  "r2_buckets": [
+    { "binding": "BLOG_CONTENT", "bucket_name": "portfolio-blog" }
+  ],
   "observability": {
     "enabled": true
   }

@@ -6,10 +6,11 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Navigation } from "@/components/navigation";
 import { Footer } from "@/components/footer";
+import { siteUrl } from "@/lib/blog/config";
 
 const inter = Inter({ subsets: ["latin"] });
 
-const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://developer.dhem.io";
+const baseUrl = siteUrl();
 
 export const metadata: Metadata = {
     metadataBase: new URL(baseUrl),

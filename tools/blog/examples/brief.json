@@ -1,0 +1,13 @@
+{
+  "slug": "practical-agent-boundaries",
+  "brief": "Explain how to bound an AI coding agent's tool permissions and review its changes. Use hypothetical examples, not invented personal experience or benchmarks. Discuss why approvals should match exact revisions.",
+  "category": "ai-agents",
+  "tags": [
+    "ai-agents",
+    "developer-tools"
+  ],
+  "sources": [],
+  "urls": [],
+  "research": false,
+  "coverAlt": "A small paper task card inside a clearly marked boundary"
+}

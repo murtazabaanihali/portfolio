@@ -25,7 +25,7 @@ export function Navigation() {
     };
 
     const isActive = (href: string) => {
-        return href === active;
+        return href === active || (href === "/blog" && pathname.startsWith("/blog/"));
     };
 
     useEffect(() => {

@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "types": [
+      "bun",
+      "node"
+    ],
+    "incremental": false,
+    "plugins": []
+  },
+  "include": [
+    "./**/*.ts",
+    "./**/*.tsx"
+  ],
+  "exclude": [
+    "../../node_modules"
+  ]
+}

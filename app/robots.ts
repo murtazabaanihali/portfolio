@@ -1,7 +1,8 @@
 import type { MetadataRoute } from "next";
+import { siteUrl } from "@/lib/blog/config";
 
 export default function robots(): MetadataRoute.Robots {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://developer.dhem.io";
+    const baseUrl = siteUrl().replace(/\/$/, "");
 
     return {
         rules: [
