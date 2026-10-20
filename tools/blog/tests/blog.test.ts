@@ -214,13 +214,13 @@ describe("generation/research boundaries (no paid calls)", () => {
     }) as typeof fetch;
     try {
       const brief: Brief = { slug: "generated-post", brief: "Explain practical agent approval boundaries using hypothetical examples.", category: "ai-agents", tags: ["ai"], sources: [], urls: [], research: false, coverAlt: "A paper task inside a clear boundary" };
-      const first = await generate(brief); ids.push(first.id);
+      const first = await generate(brief, undefined, []); ids.push(first.id);
       expect("partial" in first && first.partial).toBe(true);
       expect(textCalls).toBe(1); expect(imageCalls).toBe(2);
       imageWorks = true;
-      const second = await generate(brief);
+      const second = await generate(brief, undefined, []);
       expect(second.id).toBe(first.id); expect(textCalls).toBe(1); expect(imageCalls).toBe(3);
-      const third = await generate(brief);
+      const third = await generate(brief, undefined, []);
       expect(third.id).toBe(first.id); expect(imageCalls).toBe(3);
       await approve(first.id);
       const before = await loadWorkspace(first.id);

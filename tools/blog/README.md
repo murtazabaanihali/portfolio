@@ -1,6 +1,6 @@
 # Portfolio blog
 
-Server-rendered Next.js/OpenNext blog, public R2 Markdown, and a **local-only** Bun authoring/publishing tool. No blog database, author table, hosted generation, queues, or migrations. Existing Drizzle project tables are unchanged.
+Server-rendered Next.js/OpenNext blog, public R2 Markdown, and a **local-only** Bun authoring/publishing tool. Coverage/related-article lookup uses PostgreSQL `blog_posts` metadata and local drafts only. Content serving and publishing remain R2-backed. No hosted generation, queues, or migrations are run by this tool. Existing Drizzle project tables are unchanged.
 
 ## What ships
 
@@ -142,6 +142,46 @@ Manual unlock compares the owner but is not a distributed lease/fencing system. 
 
 `g` accepts a brief JSON path; `r` accepts AI revision instructions; `i` retries/reuses a generated cover. These keys are explicitly labeled as potentially paid operations. CLI `cover ID --yes --regenerate` deliberately replaces a successful cover. TUI source links, actual models, and research warnings appear with preview. Invalid workspaces remain visible as needing attention.
 
+## Related articles, coverage checks, and autonomous batches
+
+Press **`n` in Blog Studio** to open the autonomous wizard:
+
+1. Select multiple suggested directions with ↑/↓ and Space. Suggestions cover email APIs/Dhesend, social workflows/iReplyy, AI agents, products under DHEM, full-stack engineering, and accessible UX. These curated suggestions do not cost model credits; the planner generates specific angles within the selected directions.
+2. Enter an article count (1–10).
+3. Choose **local drafts** (default) or **auto-accept and publish live** with `p`.
+4. Toggle `o` to continue on likely covered topics with a distinct angle. Existing slugs are always protected.
+5. Type `draft` or `publish` to explicitly authorize paid calls and, for publish mode, unattended live publication for this batch.
+
+This is a bounded local run, not a recurring background scheduler. It stops after processing the requested plans; skipped/failed plans are reported rather than replaced with unbounded paid retries. Existing model fallback/timeouts still apply. There is no monetary spending cap: count limits articles, not provider charges. Review mode and count before confirming.
+
+```sh
+bun run blog related 'transactional email retries'
+bun run blog generate tools/blog/examples/brief.json --yes --allow-existing-topic
+bun run blog autonomous tools/blog/examples/autonomous.json --yes
+# For a reviewed config with "mode": "publish", BOTH authorizations are required:
+bun run blog autonomous /path/live-batch.json --yes --auto-publish
+```
+
+The batch file contains `directions` (IDs from `autonomous.ts`), `count`, `mode` (`draft` or `publish`), and `allowExistingTopic`. A single-generation brief also accepts `allowExistingTopic: true`. The CLI flag overrides that field. A topic override permits a **new-angle follow-up**, never replacing an existing slug. Editing remains the explicit `fetch`/review/publish workflow.
+
+### Query and cache behavior
+
+`catalog.ts` reads only PostgreSQL `blog_posts` metadata through the project's Drizzle connection (`DATABASE_URL`) and local workspaces. It never searches R2 or falls back to the bucket. One metadata-only SELECT loads slugs, titles, descriptions, categories, tags, and status; matching happens against the cached snapshot. No article-body downloads, DB writes, or row locks are involved. DB results are cached **in process for 60 seconds**, concurrent reads coalesce, and TTL expiry/invalidation triggers another SELECT. Local workspaces are rescanned so new drafts participate immediately. Cache lifetime ends with the CLI/TUI process; it is not a persistent cross-process cache.
+
+**DB prerequisite:** `lib/db/blog-schema.ts` defines the expected table, but this change does not provision, backfill, or synchronize it. The current publisher still writes content/manifests to R2, not this DB mirror. Include the blog schema in the migration configuration before an operator-authorized migration, and populate/maintain the mirror through your DB ingestion workflow. An empty/stale DB cannot detect missing coverage or guarantee that its published URLs remain live. Missing tables/credentials are surfaced as lookup failures, not treated as an empty catalog.
+
+Related published articles (up to six) and their canonical URLs enter the writing prompt. Local drafts and DB draft rows participate in duplicate checks but never become suggested links. Exact slug matches are blocked; strong title/slug token overlap flags likely covered topics. This is a cheap lexical heuristic, **not semantic certainty**: paraphrases can be missed, and distinct articles can share vocabulary. Relatedness alone does not block a topic. Use the override deliberately when a follow-up adds value.
+
+Manual generation can continue as a local draft with a visible warning if DB coverage is unavailable (local drafts are still checked). Autonomous batches require a successful fresh DB read before any paid planning and recheck coverage immediately before live publication. Cached search is advisory, never a substitute for the existing lock/ETag optimistic concurrency protections at commit time.
+
+### Writing and publication safeguards
+
+The planner receives selected directions, maintained product/brand facts, and up to 200 existing article summaries to bound prompt size. Each planned article is then checked against the **entire** catalog, including earlier plans in the batch. Writing prompts call for an answer-first opening, distinct reader intent, specific examples, limitations, honest evidence, natural internal links, and no fabricated founder experience. Both persistent context and the tracked example describe DHEM's umbrella role; DheGEN remains name-only until its capabilities and canonical URL are supplied.
+
+Draft mode never uploads generated articles. Live mode adds an advisory model review, rejects unknown internal article links, checks for coverage changes, accepts only new posts, and uses the existing atomic publishing core. Incomplete covers, source/coverage warnings, review rejection, conflicts, or errors retain local drafts for inspection. A model review is **not independent factual verification**; review sensitive/product-specific material yourself. Autonomous briefs currently use maintained context and evergreen explanations, not automatic fresh web research or repository scanning.
+
+Results distinguish `draft`, `published`, `held-draft`, `skipped-covered`, and `failed`, with workspace IDs and reasons. Read commit cleanup warnings separately; do not republish a committed article because cleanup failed. Do not automatically recover a stranded publishing lock. Generated workspaces survive failed publication; restarting is a new planning request, not a durable job-resume service.
+
 ## Optional AI and free research
 
 Configure ordered comma-separated `BLOG_TEXT_MODELS` and `BLOG_IMAGE_MODELS` (maximum five each), `OPENROUTER_API_KEY`, and optional `BLOG_AI_BASE_URL`. The text adapter uses the OpenAI SDK; the image adapter uses the currently documented OpenRouter `POST /images` request (`model`, `prompt`, `aspect_ratio`, `n`) and `data[].b64_json` response. This is not an assumption that every provider implements identical image APIs. A replacement endpoint must support this boundary or update the small adapter.
@@ -153,7 +193,7 @@ bun run blog cover ID --yes                    # reuse success; retry a missing 
 bun run blog revise ID --instructions 'Clarify the trade-offs without adding claims' --yes
 ```
 
-Each model gets at most two attempts, then the next configured model; text timeout 90s/image timeout 120s. Batch concurrency defaults to two and caps at four. Text survives cover failure and returns its workspace ID. Repeating the same normalized brief reuses a matching extant workspace and retries only missing cover work; explicitly import/generate a changed brief to start another article. Matching ignores changes to files referenced by the same brief: review/revise explicitly when source/context contents change. Once a workspace has been committed and cleaned, a new generate call is a new generation request. Generation never publishes.
+Each model gets at most two attempts, then the next configured model; text timeout 90s/image timeout 120s. Article generation runs sequentially so completed drafts participate in subsequent coverage checks. Text survives cover failure and returns its workspace ID. Repeating the same normalized brief reuses a matching extant workspace and retries only missing cover work; explicitly import/generate a changed brief to start another article. Matching ignores changes to files referenced by the same brief: review/revise explicitly when source/context contents change. Once a workspace has been committed and cleaned, a new generate call is a new generation request. The `generate` command never publishes. The separate `autonomous` workflow can publish only with explicit live-mode authorization.
 
 Only explicitly selected text files and supplied URLs are used. Local source files are capped at 100KB, deny common credential files/directories and private key/token patterns, and are never scanned recursively. **Selection sends their text to the model provider.** Automated secret detection is not a guarantee; inspect inputs. Raw private sources and research are never included in R2 uploads. Persistent context is supplied to generation but not uploaded wholesale to R2. URL fetches require public HTTPS, validate every redirect, pin the checked DNS addresses for connections, limit response size, and use timeouts.
 

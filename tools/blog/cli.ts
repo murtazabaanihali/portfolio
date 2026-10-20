@@ -5,6 +5,8 @@ import { BlogService, batchSchema, type Action, type Plan } from "./core";
 import { R2Storage, Conflict } from "./storage";
 import { approve, cleanup, importPost, listWorkspaces, loadWorkspace, setStatus } from "./workspace";
 import { generate, generateBatch, generateCover, revise } from "./ai";
+import { runAutonomous } from "./autonomous";
+import { articleCatalog, searchArticles } from "./catalog";
 
 const help = `Local blog workflow (never runs in the Worker)
 bun run blog <command> [arguments] [options]
@@ -26,7 +28,9 @@ gc [--yes]                         List garbage; delete only with --yes and grac
 lock-status                        Inspect a stranded publishing lock
 unlock <owner> --yes --no-active-writers  Manual recovery ONLY after stopping all writers
 clean <id> --yes                    Explicitly discard owned local work
-generate <brief.json> --yes         Paid text + cover generation; array supports batches
+generate <brief.json> --yes [--allow-existing-topic]  Paid text + cover; array supports batches
+autonomous <batch.json> --yes       Bounded batch; mode draft or publish (live requires --auto-publish)
+related <query>                    Cached metadata search including local and remote coverage
 cover <id> --yes [--regenerate]     Retry/reuse cover (regenerate only explicitly)
 revise <id> --instructions "..." --yes
 tui                                Keyboard review, diff, approval, editor, generation
@@ -40,6 +44,7 @@ async function main() {
   const args = parseArgs({ args: process.argv.slice(2), allowPositionals: true, strict: true,
     options: { yes: { type: "boolean" }, "dry-run": { type: "boolean" }, cover: { type: "string" },
       batch: { type: "string" }, plan: { type: "string" }, out: { type: "string" },
+      "allow-existing-topic": { type: "boolean" }, "auto-publish": { type: "boolean" },
       instructions: { type: "string" }, "no-active-writers": { type: "boolean" }, regenerate: { type: "boolean" }, help: { type: "boolean" } } });
   const [command, ...ids] = args.positionals, options = args.values;
   if (!command || options.help || command === "help") { console.log(help); return; }
@@ -93,10 +98,21 @@ async function main() {
       }
       break;
     }
+    case "related": result = searchArticles(await articleCatalog().all(), { topic: required() }); break;
+    case "autonomous": {
+      requireYes();
+      const input = JSON.parse(await readFile(required(), "utf8"));
+      if (options["allow-existing-topic"]) input.allowExistingTopic = true;
+      if (input.mode === "publish" && !options["auto-publish"]) throw new Error("Live autonomy requires --auto-publish as well as --yes");
+      result = await runAutonomous(input);
+      if ((result as Awaited<ReturnType<typeof runAutonomous>>).results.some(r => ["failed", "held-draft"].includes(r.status))) process.exitCode = 1;
+      break;
+    }
     case "generate": {
       requireYes(); if (options["dry-run"]) throw new Error("Generation is separate from publishing dry-run");
       const input = JSON.parse(await readFile(required(), "utf8"));
-      result = Array.isArray(input) ? await generateBatch(input) : await generate(input);
+      const withOverride = (brief: unknown) => options["allow-existing-topic"] ? { ...(brief as object), allowExistingTopic: true } : brief;
+      result = Array.isArray(input) ? await generateBatch(input.map(withOverride)) : await generate(withOverride(input));
       if (JSON.stringify(result).includes('"error":')) process.exitCode = 1;
       break;
     }

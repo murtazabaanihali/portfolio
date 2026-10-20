@@ -1,0 +1,6 @@
+{
+  "directions": ["email-apis", "ai-agents", "solo-founder"],
+  "count": 3,
+  "mode": "draft",
+  "allowExistingTopic": false
+}

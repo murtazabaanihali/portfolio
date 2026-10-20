@@ -31,3 +31,11 @@ Pass to `plan --batch file.json`; commit the saved plan. Removals must be explic
 Dry-run: `publish --batch file.json --dry-run` reads/validates/diffs only. It does not generate, upload, clean, or delete. Exit 3 means conflict: fetch/review/replan; do not force overwrite.
 
 Built-in generation is optional and separate: `generate brief.json --yes` incurs provider charges and transmits selected material. It never publishes. Failed covers preserve generated text and return a retry ID.
+
+## Coverage and bounded autonomy
+
+- `related "topic query"` searches cached PostgreSQL blog_posts metadata and local drafts, never R2. Only published DB entries have linkable canonical URLs. Coverage is lexical/heuristic, not semantic proof.
+- Generation checks likely coverage by default. `--allow-existing-topic` (or `allowExistingTopic: true` in a brief/batch) permits a distinct follow-up, NEVER an existing-slug overwrite.
+- `autonomous batch.json --yes` authorizes paid planning/generation for selected direction IDs and count (1–10), with local draft mode by default. `mode: "publish"` additionally requires `--auto-publish`. The TUI `n` wizard has equivalent explicit typed confirmation.
+- Live autonomy only creates new posts, holds uncertain/incomplete work locally, and uses fresh coverage checks and the existing publishing core. Model review does not establish factual truth. No recurring scheduling or automatic lock recovery.
+- Treat DHEM as the owner-confirmed umbrella brand for almost all projects; do not infer legal status or shared product features/accounts. DheGEN needs supplied product facts before feature-specific articles.

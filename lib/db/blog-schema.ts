@@ -1,15 +1,15 @@
 /**
- * Optional Drizzle query mirror for blog metadata.
+ * Drizzle query mirror for blog metadata.
  *
- * The blog runtime is R2-backed (Markdown + manifest in the bucket); nothing in
- * `app/`, `lib/blog/`, or `tools/blog/` reads or writes these tables. They exist
- * for future owner-authorized SQL queries (e.g. analytics joins) and follow the
- * same content contract as `lib/blog/contract.ts`.
+ * Coverage/related-article lookup in tools/blog/catalog.ts reads this table.
+ * Content serving and publishing remain R2-backed; the publisher does NOT
+ * automatically synchronize this mirror. Rows must be populated and kept current
+ * for complete coverage results and valid published link suggestions.
  *
- * No migration/schema generation has been run for these tables. When the owner
- * wants them in PostgreSQL, use the project's normal `db:update` flow
- * (`drizzle-kit generate && drizzle-kit migrate`) deliberately — until then this
- * file is inert.
+ * No migration/schema generation is performed by lookup. Before provisioning,
+ * include this schema in the project's Drizzle migration configuration and use
+ * the normal migration flow with explicit operator authorization. Missing tables
+ * are reported as DB lookup failures, never silently replaced by R2 searches.
  */
 import {
     pgTable,

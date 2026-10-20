@@ -15,6 +15,16 @@ Sources:
 - https://dhem.io — brand relationship is an owner statement, not an independent business/legal verification.
 - Repository corroboration: components/about-section.tsx and components/hero-section.tsx.
 
+## DHEM umbrella brand
+
+Owner-confirmed positioning: DHEM is the umbrella brand under which almost all of Murtaza's projects will live. The portfolio is the personal author/developer home base; DHEM is the broader project/product brand. Individual products retain their names and their confirmed canonical URLs. Do not imply that every project belongs to DHEM, that all products share accounts/data/billing, or that DHEM has a particular legal/company status.
+
+Use this relationship when it clarifies a founder/product story, not as repeated promotional boilerplate. Link https://dhem.io only when the brand is relevant; do not imply that its planned separate brand site has already launched.
+
+### DheGEN context boundary
+
+The owner identifies DheGEN as one of his products. Its capabilities, canonical URL, current availability, and relationship to other product names are not supplied here. Do not infer them or invent feature tutorials. Request maintained product facts before choosing a DheGEN-specific article.
+
 ## Product/SaaS catalog
 
 ### iReplyy
@@ -46,6 +56,10 @@ Supported facts: name, portfolio link, and founder association only. Direct fetc
 Relevant topics and natural linking situations: none established yet; request/source actual product context before a topical feature discussion. Do not invent a product description or promote it automatically. A possible association with DheGEN was unverified and must not be asserted.
 
 ## Editorial direction
+
+Plan around a specific reader question and a distinct search intent. Check existing published articles AND local/remote drafts before creating another piece. Metadata similarity is a heuristic, not proof of semantic duplication. A deliberate follow-up should explain its different scope and link the existing published article where useful. Never cite a draft or invent an internal article URL.
+
+A useful article typically opens with the answer, explains when the approach applies, gives a concrete example, shows alternatives or trade-offs, and ends with actionable next steps. Use this as a flexible standard rather than a mandatory repetitive template. Prefer depth and honest limitations over arbitrary word counts. Supply readable standalone passages, descriptive headings, and claims with enough context to quote accurately.
 
 Voice: practical founder/developer; clear, calm, direct, and specific where evidence permits. This is editorial guidance, not a public quotation. Prefer an answer-first opening, descriptive headings, short paragraphs, runnable examples when actually validated, and useful limitations. Avoid academic padding, hype, repetitive summaries, forced analogies, and salesy calls to action.
 
