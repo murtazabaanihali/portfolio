@@ -1,7 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { request } from "node:https";
-export type ResearchResult = { sources: { url: string; title: string; text: string }[]; warnings: string[]; provider?: string };
+export type ResearchResult = { sources: { url: string; title: string; text: string; kind?: "page" | "search-result"; retrievedAt?: string }[]; warnings: string[]; provider?: string };
 const privateIp = (ip: string) => {
   if (ip.includes(":")) return /^(::|fc|fd|fe8|fe9|fea|feb|ff)/i.test(ip) || ip.includes(".");
   const [a, b] = ip.split(".").map(Number);
@@ -80,7 +80,7 @@ export async function suppliedSource(url: string, signal = AbortSignal.timeout(1
   const type = response.headers.get("content-type") || "";
   if (!/text\/|application\/(json|xml)/.test(type)) throw new Error("Source is not text");
   const body = await boundedText(response);
-  return { url, title: readable(body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || url), text: readable(body).slice(0, 20_000) };
+  return { url, title: readable(body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || url), text: readable(body).slice(0, 20_000), kind: "page" as const, retrievedAt: new Date().toISOString() };
 }
 export type SearchProvider = { name: string; search(query: string, signal: AbortSignal): Promise<ResearchResult["sources"]> };
 export const freeProviders: SearchProvider[] = [
@@ -115,7 +115,7 @@ export async function research(query: string, providers = freeProviders, timeout
         for (const result of results.slice(0, 3)) {
           if (Date.now() >= deadline) break;
           try { sources.push(await suppliedSource(result.url, AbortSignal.timeout(Math.max(1, Math.min(3000, deadline - Date.now()))))); }
-          catch { sources.push(result); warnings.push(`Could not read ${result.url}; search snippet is not verification.`); }
+          catch { sources.push({ ...result, kind: "search-result" }); warnings.push(`Could not read ${result.url}; search snippet is not verification.`); }
         }
         return { sources, warnings, provider: provider.name };
       } catch (e) {

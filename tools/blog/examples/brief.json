@@ -1,6 +1,7 @@
 {
   "slug": "practical-agent-boundaries",
-  "brief": "Explain how to bound an AI coding agent's tool permissions and review its changes. Use hypothetical examples, not invented personal experience or benchmarks. Discuss why approvals should match exact revisions.",
+  "brief": "Write a conversational blog post about giving an AI coding agent useful freedom without handing it the keys to everything. Develop a clear take with a concrete hypothetical example of a tool permission going too far and how revision-bound approval helps. Explain the choices in prose, not a permission questionnaire or a checklist. Do not invent personal experience or test results.",
+  "postType": "guide",
   "category": "ai-agents",
   "tags": [
     "ai-agents",

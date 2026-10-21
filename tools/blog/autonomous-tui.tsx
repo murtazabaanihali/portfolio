@@ -1,9 +1,16 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import { suggestDirections, runAutonomous, type AutonomousOptions, type Direction } from "./autonomous";
+import { suggestDirections, runAutonomous, directionSchema, type AutonomousOptions, type Direction } from "./autonomous";
+
+export function customTopicDirection(topic: string): Direction {
+  const detail = topic.trim();
+  return directionSchema.parse({ id: "custom-topic", label: detail.length > 100 ? detail.slice(0, 99) + "…" : detail, detail });
+}
 
 export function AutonomousWizard({ onClose }: { onClose: () => void }) {
-  const [step, setStep] = useState<"suggest" | "suggesting" | "directions" | "count" | "settings" | "confirm" | "running" | "done">("suggest");
+  const [step, setStep] = useState<"suggest" | "suggesting" | "directions" | "topic" | "count" | "settings" | "confirm" | "running" | "done">("suggest");
+  const [topic, setTopic] = useState("");
+  const [topicReturnStep, setTopicReturnStep] = useState<"suggest" | "directions">("suggest");
   const [directions, setDirections] = useState<Direction[]>([]);
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -16,7 +23,19 @@ export function AutonomousWizard({ onClose }: { onClose: () => void }) {
   const [offset, setOffset] = useState(0);
   useInput((key, info) => {
     if (step === "running" || step === "suggesting") return;
-    if (info.escape) { onClose(); return; }
+    if (info.escape) { if (step === "topic") setStep(topicReturnStep); else onClose(); return; }
+    if ((step === "suggest" || step === "directions") && key === "t") {
+      setTopicReturnStep(step); setStep("topic"); setMessage(""); return;
+    }
+    if (step === "topic") {
+      if (info.return && topic.trim().length >= 3) {
+        const direction = customTopicDirection(topic);
+        setDirections([direction]); setSelected(new Set([direction.id])); setCursor(0);
+        setCount("1"); setStep("count");
+      } else if (info.backspace || info.delete) setTopic(s => s.slice(0, -1));
+      else if (!info.ctrl && !info.meta && key) setTopic(s => (s + key.replace(/[\x00-\x1f\x7f]/g, " ")).slice(0, 700));
+      return;
+    }
     if (step === "done") {
       if (key === "q" || info.return) onClose();
       if (info.downArrow) setOffset(o => Math.min(Math.max(0, output.split("\n").length - 5), o + 1));
@@ -69,29 +88,37 @@ export function AutonomousWizard({ onClose }: { onClose: () => void }) {
   });
   const clean = (s: string) => s.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
   return <Box flexDirection="column" padding={1}>
-    <Text bold color="magenta">Autonomous blog batch — DHEM / portfolio</Text>
+    <Text bold color="magenta">Blog posts — your topic or suggested ideas</Text>
     <Text dimColor>Esc cancels before starting. This is a bounded run, not a recurring scheduler.</Text>
     {step === "suggest" && <>
-      <Text>Ask the LLM to suggest topic directions from your editorial context, DB articles, and local drafts.</Text>
-      <Text color="yellow">Enter authorizes paid text-model calls for suggestions only. No articles will be generated or published yet.</Text>
+      <Text>t: type your own topic — news, opinions, marketing, business, guides, or anything else.</Text>
+      <Text>Or press Enter for broad LLM suggestions informed by your voice and existing posts.</Text>
+      <Text color="yellow">Enter authorizes paid suggestion calls only. Typing your own topic skips that call. No posts are generated or published yet.</Text>
       {message && <Text color="red">{clean(message)} — Enter retries; Esc cancels. No predefined fallback suggestions.</Text>}
     </>}
     {step === "suggesting" && <Text color="yellow">Reading DB/local coverage and asking the LLM for topic directions…</Text>}
     {step === "directions" && <>
-      <Text>Select LLM suggestions: ↑↓ move · space multi-select · Enter continue · r request new suggestions</Text>
+      <Text>↑↓ move · space multi-select · Enter continue · t type your topic · r new suggestions</Text>
       {directions.map((d, i) => <Text key={d.id} color={cursor === i ? "magenta" : undefined}>{cursor === i ? "›" : " "} {selected.has(d.id) ? "☑" : "□"} {clean(d.label)}</Text>)}
       <Text dimColor>{clean(directions[cursor]?.detail || "")}</Text>
     </>}
-    {step === "count" && <Text>Number of articles (1–10; Backspace to edit): {count}▌</Text>}
+    {step === "topic" && <>
+      <Text>What do you want to blog about? Include the angle or tone if you have one.</Text>
+      <Text dimColor>For example: a marketing guide for developers, a grounded take on a model launch, or the reality of dropshipping.</Text>
+      <Text>Topic: {topic}▌</Text>
+      <Text dimColor>3–700 characters · Enter continue · Esc back. No model call yet.</Text>
+    </>}
+    {step === "count" && <Text>Number of posts (1–10; Backspace to edit): {count}▌</Text>}
     {step === "settings" && <>
-      <Text>p: {publish ? "AUTO-ACCEPT: publish eligible articles LIVE" : "DRAFT ONLY: keep articles locally for review"}</Text>
+      <Text>p: {publish ? "AUTO-ACCEPT: publish eligible posts LIVE" : "DRAFT ONLY: keep posts locally for you to read"}</Text>
       <Text>o: {allowExistingTopic ? "Continue on covered topics with a distinct angle" : "Skip likely covered topics"}</Text>
       <Text>Topic override NEVER allows an existing slug to be overwritten. Enter continues.</Text>
     </>}
     {step === "confirm" && <>
-      <Text>{count} articles · {selected.size} directions · {allowExistingTopic ? "topic overlap allowed" : "skip overlap"}</Text>
-      <Text color="yellow">Paid planning, text and cover calls. {publish ? "Includes model review and LIVE publication without individual approval; uncertain work stays local." : "No uploads or live publication."}</Text>
-      <Text>Model review is not factual verification. Skipped/failed articles may leave fewer than the requested count.</Text>
+      <Text>{count} posts · {selected.size} topics · {allowExistingTopic ? "topic overlap allowed" : "skip overlap"}</Text>
+      <Text color="yellow">Paid planning, writing and cover calls. {publish ? "Includes the existing publish-mode check and LIVE publication without individual approval; uncertain work stays local." : "No reviewer call, uploads or live publication."}</Text>
+      <Text>Time-sensitive topics use free best-effort web research. Sources can fail; current claims must not be invented.</Text>
+      <Text>Skipped/failed posts may leave fewer than the requested count. Automated checks are not factual verification.</Text>
       <Text>Type {publish ? "publish" : "draft"} to authorize this batch: {confirmation}▌</Text>
     </>}
     {step === "running" && <Text color="yellow">{clean(message)} — wait for completion; do not interrupt publication.</Text>}

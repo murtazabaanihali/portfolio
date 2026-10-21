@@ -10,7 +10,8 @@ You may author Markdown without calling built-in AI. Read `tools/blog/blog-conte
 - Use GFM + strict YAML frontmatter, never HTML/MDX. See examples/post.md and lib/blog/contract.ts.
 - Stable slugs; one configured category; normalized tags; descriptive cover alt. Dates are ISO-8601 with explicit timezone.
 - Preserve original publishedAt on edits. Set updatedAt to the actual correction time. No scheduled future publication.
-- Links must be useful and factual; no fabricated tests/experience/benchmarks or forced product promotion.
+- Write complete, conversational blog posts across broad subjects (news, opinions, guides, technology, marketing, business, and more), not planning briefs or questionnaires. Categories are navigation labels, not topic restrictions. Use prose and a shape that fits the post; no mandatory technical-article template.
+- Links must be useful and factual; no fabricated tests/experience/benchmarks or forced product promotion. Suggested headlines/model names are not verified news; source current claims or make the uncertainty explicit.
 
 ## Noninteractive workflow
 

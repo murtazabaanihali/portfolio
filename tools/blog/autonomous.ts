@@ -1,12 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
-import { categories, siteUrl } from "../../lib/blog/config";
+import { siteUrl } from "../../lib/blog/config";
 import { markdownTree, walk } from "../../lib/blog/contract";
 import { briefSchema, generate, structuredCompletion } from "./ai";
 import { articleCatalog, searchArticles, summarize, type ArticleCatalog, type ArticleSummary } from "./catalog";
 import { BlogService } from "./core";
 import { R2Storage } from "./storage";
 import { CONTEXT_PATH, loadWorkspace, setStatus } from "./workspace";
+import { directionSystem, plannerSystem } from "./prompts";
 
 const directionText = z.string().trim().min(3).regex(/^[^\x00-\x1f\x7f]+$/, "Use single-line direction text");
 export const directionSchema = z.object({
@@ -24,8 +25,8 @@ export async function suggestDirections(deps: { catalog?: ArticleCatalog; comple
   const existing = await (deps.catalog || articleCatalog()).all(true);
   const context = await readFile(CONTEXT_PATH, "utf8");
   return (await (deps.complete || structuredCompletion)(
-    `Suggest 3–8 diverse, specific topic directions for Murtaza's developer portfolio and DHEM umbrella brand. Derive the choices from the supplied editorial context and existing coverage, not a fixed category menu. Each direction should identify a reader problem, a useful new angle or coverage gap, and why it suits this author. Prefer substantive evergreen topics; do not invent personal experience, product features, market demand metrics, or keyword volumes. Avoid merely rephrasing existing posts. Return {"directions":[{"id":"short-unique-slug","label":"Concise selectable direction","detail":"Audience, useful scope, and distinct angle"}]}. Labels max 100 characters, details max 700 characters.`,
-    { editorialContext: context, existingCoverage: existing.slice(0, 200), totalExistingArticles: existing.length },
+    directionSystem,
+    { currentDate: new Date().toISOString().slice(0, 10), editorialContext: context, existingCoverage: existing.slice(0, 200), totalExistingArticles: existing.length },
     suggestionsSchema,
   )).directions;
 }
@@ -59,13 +60,13 @@ export async function runAutonomous(input: AutonomousOptions, onStatus: (message
   // Autonomous operation fails closed on DB outages, unlike manual draft generation.
   const existing = await catalog.all(true);
   const context = await readFile(CONTEXT_PATH, "utf8");
-  onStatus("Planning distinct article angles (paid text call)…");
+  onStatus("Planning blog topics and angles (paid text call)…");
   const planned = await complete(
-    `You are the editorial planner for Murtaza's portfolio and DHEM umbrella brand. Plan exactly the requested number of useful articles across the selected directions. Prioritize reader questions and original, specific angles rather than generic SEO filler. Avoid covered search intents unless allowExistingTopic is true; even then require a distinct angle and a NEW slug. Do not invent personal stories or unsupported product facts. Do not assign sources or URLs: the writing stage uses maintained context. Return {"briefs": [...]} where each brief has slug, brief (detailed reader question, search intent, unique angle, useful examples, limitations), category, tags, coverAlt. Categories: ${categories.map(c => c.slug).join(", ")}.`,
-    { count: options.count, selectedDirections: options.directions, allowExistingTopic: options.allowExistingTopic, editorialContext: context,
+    plannerSystem,
+    { currentDate: new Date().toISOString().slice(0, 10), count: options.count, selectedDirections: options.directions, allowExistingTopic: options.allowExistingTopic, editorialContext: context,
       // Bound prompt size; per-article search still checks the entire catalog, not this sample.
       existingCoverage: existing.slice(0, 200), totalExistingArticles: existing.length },
-    z.object({ briefs: z.array(briefSchema.omit({ sources: true, urls: true, research: true, allowExistingTopic: true })).length(options.count) }).strict(),
+    z.object({ briefs: z.array(briefSchema.omit({ sources: true, urls: true, allowExistingTopic: true })).length(options.count) }).strict(),
   );
   const results: { slug: string; id?: string; status: string; reasons?: string[]; result?: unknown }[] = [];
   const reserved = [...existing];
@@ -82,7 +83,7 @@ export async function runAutonomous(input: AutonomousOptions, onStatus: (message
     let id: string | undefined;
     let stagedFingerprint: string | undefined;
     try {
-      const generated = await create(brief, undefined, reserved.filter(p => p.slug !== brief.slug));
+      const generated = await create(brief, undefined, reserved.filter(p => p.slug !== brief.slug), { requestedDirections: options.directions });
       id = generated.id;
       const w = await loadWorkspace(id);
       if (w.meta.slug !== brief.slug) throw new Error("Generated workspace does not match the planned slug");

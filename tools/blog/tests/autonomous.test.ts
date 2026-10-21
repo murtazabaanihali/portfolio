@@ -74,6 +74,29 @@ describe("LLM direction suggestions", () => {
     const result = await runAutonomous({ directions: [suggestions[0]], count: 1 }, undefined, { ...deps, complete, generate: generator() });
     expect(result.results[0].status).toBe("draft");
   });
+  test("planning forwards broad post style, research query and original topic to a single writing stage", async () => {
+    const deps = await setup();
+    const directions = ["A grounded opinion on a proposed model launch, not an engineering tutorial"];
+    const planned = { ...brief, slug: "model-launch-opinion", category: "ai-news", postType: "opinion", research: true, researchQuery: "model launch official announcement" };
+    let calls = 0;
+    const complete = (async (instruction: string, input: unknown, schema: { parse: (v: unknown) => unknown }) => {
+      calls++;
+      expect(instruction).toContain("Categories are navigation labels");
+      expect((input as { selectedDirections: unknown }).selectedDirections).toEqual(directions);
+      expect((input as { currentDate: string }).currentDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      return schema.parse({ briefs: [planned] });
+    }) as typeof structuredCompletion;
+    const generate = (async (input, _resume, _catalog, context) => {
+      expect(input).toMatchObject(planned);
+      expect(context?.requestedDirections).toEqual(directions);
+      const id = await createWorkspace(serializePost({ ...post(planned.slug), category: planned.category }, "A model announcement needs more than an impressive headline. This fixture is a blog opening, not evidence of any real launch."));
+      ids.push(id);
+      return { id, warnings: [], textModel: "mock", cover: { id, reused: false, model: "mock" } };
+    }) as typeof generateArticle;
+    const result = await runAutonomous({ directions, count: 1 }, undefined, { ...deps, complete, generate });
+    expect(result.results[0].status).toBe("draft");
+    expect(calls).toBe(1); // Planning only; draft mode adds no reviewer.
+  });
   test("CLI suggestion call requires explicit authorization", async () => {
     const command = Bun.spawn(["bun", "tools/blog/cli.ts", "suggest"], { stdout: "pipe", stderr: "pipe" });
     expect(await command.exited).toBe(4);

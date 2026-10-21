@@ -6,12 +6,12 @@ Human-editable operator context. Loaded by local generation and external agents;
 
 Murtaza Baanihali is a full-stack developer and founder. His portfolio describes web and mobile product work with attention to performance, accessibility, clean UX, pragmatic choices, thoughtful defaults, and maintainable code. He works end-to-end: scoping, UX, implementation, testing, and launch.
 
-The owner directly describes himself as a solo founder with several products. The permanent portfolio is https://developer.dhem.io. The owner says https://dhem.io currently redirects to the portfolio but will become the separate DHEM brand site. Do not infer legal company status, revenue, team size beyond solo founder, customer counts, or years of experience at a future date.
+The owner directly describes himself as a solo founder with several products. The permanent portfolio is https://dev.dhem.io. The owner says https://dhem.io currently redirects to the portfolio but will become the separate DHEM brand site. Do not infer legal company status, revenue, team size beyond solo founder, customer counts, or years of experience at a future date.
 
-Audience: developers building practical applications, solo founders shipping SaaS, and people considering AI/agent integrations. Prioritize useful explanations, implementation decisions, trade-offs, and lessons supported by actual supplied context.
+Audience varies with the post: curious readers following AI and technology, developers, builders learning marketing, solo founders, and people exploring online business. The author's background informs the voice; it does not restrict the blog to technical tutorials or his own products.
 
 Sources:
-- https://developer.dhem.io — official portfolio, freshly readable.
+- https://dev.dhem.io — official portfolio, freshly readable.
 - https://dhem.io — brand relationship is an owner statement, not an independent business/legal verification.
 - Repository corroboration: components/about-section.tsx and components/hero-section.tsx.
 
@@ -57,13 +57,17 @@ Relevant topics and natural linking situations: none established yet; request/so
 
 ## Editorial direction
 
-Plan around a specific reader question and a distinct search intent. Check existing published articles AND local/remote drafts before creating another piece. Metadata similarity is a heuristic, not proof of semantic duplication. A deliberate follow-up should explain its different scope and link the existing published article where useful. Never cite a draft or invent an internal article URL.
+Write complete blog posts, not formal reports, planning documents, questionnaires, or worksheets. The owner wants broad topics: AI/model news and reactions, technology, marketing for builders, online business and ecommerce (including dropshipping), opinions and practical guides, alongside software and founder topics. These are examples, not an exhaustive topic whitelist. Do not force a DHEM/product or engineering angle onto an unrelated topic.
 
-A useful article typically opens with the answer, explains when the approach applies, gives a concrete example, shows alternatives or trade-offs, and ends with actionable next steps. Use this as a flexible standard rather than a mandatory repetitive template. Prefer depth and honest limitations over arbitrary word counts. Supply readable standalone passages, descriptive headings, and claims with enough context to quote accurately.
+Follow the selected topic and choose its natural shape: news update, opinion, guide, or explainer. Open with the news, a useful take, a concrete tension, or the practical payoff. Develop the point in connected prose with specific examples. A guide should explain how to do the thing, not merely list questions to consider. Lists, tables and templates may support the prose, but are not the default deliverable. Do not impose a repeated introduction/checklist/limitations/next-steps template. Length follows substance; a short news post need not become a long technical article.
 
-Voice: practical founder/developer; clear, calm, direct, and specific where evidence permits. This is editorial guidance, not a public quotation. Prefer an answer-first opening, descriptive headings, short paragraphs, runnable examples when actually validated, and useful limitations. Avoid academic padding, hype, repetitive summaries, forced analogies, and salesy calls to action.
+Voice: conversational, clear, direct, curious, and specific. Contractions and reasoned opinions are welcome; unsupported hype is not. The developer/founder perspective can add character without pretending the author personally tried, built, sold, or measured something. Avoid academic padding, generic SEO intros, repetitive summaries, and salesy calls to action.
 
-Categories: Engineering; Building Products; Founder Notes; AI & Agents; Developer Experience; Cloud & Performance; Design & Accessibility. Choose one primary category; use normalized tags for languages, technologies, or products.
+A suggested headline or model name is not a verified event. For news, current prices/releases, comparisons, and year-specific market posts, obtain relevant current sources where possible. Distinguish confirmed announcements, source claims, opinion, and rumor. If a premise cannot be established, say so or narrow the angle; never invent a launch or market statistic just to fulfill a catchy title. Hypothetical examples must be labeled at the point of use.
+
+Check published posts AND local/remote drafts to avoid repetition, not to restrict future subjects to past topics. Metadata similarity is a heuristic, not proof. A deliberate follow-up should have a distinct angle and may link the existing published post. Never cite a draft or invent an internal URL.
+
+Categories are navigation labels, not limits on subject matter. Choose the closest category from lib/blog/config.ts: Engineering; Building Products; Founder Notes; AI & Agents; AI News; Marketing & Growth; Business & Ecommerce; Technology; Perspectives; Developer Experience; Cloud & Performance; Design & Accessibility. Perspectives can hold topics outside the specialist sections. Use normalized tags for the actual subject, not only technologies.
 
 Product links are optional. Use natural anchor text only when relevant and useful. No quotas, repetitive promotion, link stuffing, forced mentions, or fabricated implementation stories. Keep composition adaptable to future clearly labeled disclosures, but do not invent sponsors.
 

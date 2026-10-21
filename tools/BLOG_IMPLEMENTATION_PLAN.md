@@ -185,7 +185,7 @@ Include:
 
 ### Researched seed material (checked 2026-10-15)
 
-Research began at `https://dhem.io` and `https://developer.dhem.io`, then followed the portfolio's product links. Both portfolio URLs yielded the same readable about text. Owner statements in this plan govern the permanent-domain/DHEM-brand distinction.
+Research began at `https://dhem.io` and `https://dev.dhem.io`, then followed the portfolio's product links. Both portfolio URLs yielded the same readable about text. Owner statements in this plan govern the permanent-domain/DHEM-brand distinction.
 
 #### Identity and positioning
 
@@ -193,7 +193,7 @@ Research began at `https://dhem.io` and `https://developer.dhem.io`, then follow
 
 Sources:
 - https://dhem.io
-- https://developer.dhem.io
+- https://dev.dhem.io
 - Local corroboration: `components/about-section.tsx` and `components/hero-section.tsx`.
 
 The owner directly states he is a solo founder with several products and is developing DHEM into a brand. Do not infer legal company status, revenue, customer counts, years of experience at a future date, or team size beyond what he supplied.
@@ -226,7 +226,7 @@ The owner directly states he is a solo founder with several products and is deve
 
 #### Research limits and writing voice
 
-The project listing at `https://developer.dhem.io/projects` was client-rendered and could not be read by the direct extractor. Search summaries mentioned additional projects, but unverified names/descriptions are intentionally not included in the seed catalog. Implementation may enrich the context from reachable official pages, but must not convert search summaries into asserted facts.
+The project listing at `https://dev.dhem.io/projects` was client-rendered and could not be read by the direct extractor. Search summaries mentioned additional projects, but unverified names/descriptions are intentionally not included in the seed catalog. Implementation may enrich the context from reachable official pages, but must not convert search summaries into asserted facts.
 
 Suggested voice derived from owner preferences: practical founder/developer, clear and useful, specific when facts are available, readable rather than academic, restrained promotion. This is an editorial recommendation, not a quotation from the public site.
 

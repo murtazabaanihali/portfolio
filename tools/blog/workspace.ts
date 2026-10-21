@@ -8,7 +8,7 @@ export const TOOL_DIR = dirname(fileURLToPath(import.meta.url));
 export const WORK_ROOT = join(TOOL_DIR, ".work");
 export const CONTEXT_PATH = process.env.BLOG_CONTEXT_PATH ? resolve(process.env.BLOG_CONTEXT_PATH) : join(TOOL_DIR, "blog-context.md");
 export const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
-export type WorkspaceState = { owned: "portfolio-blog-v1"; originalSlug: string; baselineRevision?: string; approval?: string; sources?: string[]; warnings?: string[]; textModel?: string; imageModel?: string; generationKey?: string };
+export type WorkspaceState = { owned: "portfolio-blog-v1"; originalSlug: string; baselineRevision?: string; approval?: string; sources?: string[]; warnings?: string[]; textModel?: string; requestedTextModel?: string; imageModel?: string; generationKey?: string };
 export async function workspacePath(id: string) {
   if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Workspace ID must be a tool-created UUID");
   const root = await realpath(WORK_ROOT), path = join(root, id);
