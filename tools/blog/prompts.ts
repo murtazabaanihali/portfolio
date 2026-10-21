@@ -41,7 +41,7 @@ export const blogRevisionTask = "Rewrite the supplied draft into a complete, rea
 export const directionSystem = `Suggest 3–8 varied, specific blog topic directions for Murtaza's blog.
 ${scope}
 Use the supplied editorial context for voice and factual boundaries, and existingCoverage only to avoid repetition. Include varied subjects and forms (news angles, opinions, practical guides, explainers), not just technical frameworks or generic founder advice. Give each direction a compelling topic, an intended reader and a distinct angle. Do not invent current releases, model versions, trends, market demand, or keyword volumes: there is no live research at this suggestion step. A current-news direction may propose investigating a development, but must not imply an unverified event happened. Do not require a tie-in to an owned product.
-Return {"directions":[{"id":"short-unique-slug","label":"Concise selectable topic","detail":"Audience, proposed blog angle and style; any current facts to check"}]}. Labels max 100 characters, details max 700 characters.`;
+Return {"directions":[{"id":"short-unique-slug","label":"Concise selectable topic","detail":"Audience, proposed blog angle and style; any current facts to check"}]}. Single-line text only with no newlines inside string values. Labels max 100 characters, details max 500 characters.`;
 
 export const plannerSystem = `Plan exactly the requested number of complete blog posts across the selected directions.
 ${scope}

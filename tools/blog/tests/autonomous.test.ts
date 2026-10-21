@@ -5,7 +5,7 @@ import { BlogService } from "../core";
 import { type Storage, type Stored, Conflict } from "../storage";
 import { cleanup, createWorkspace, hash, loadWorkspace } from "../workspace";
 import { serializePost, type Post } from "../../../lib/blog/contract";
-import { generate as generateArticle, type generate, type structuredCompletion } from "../ai";
+import { generate as generateArticle, extractJson, type generate, type structuredCompletion } from "../ai";
 
 process.env.NEXT_PUBLIC_APP_URL = "https://portfolio.example.com";
 process.env.BLOG_CDN_URL = "https://content.example.com";
@@ -101,6 +101,32 @@ describe("LLM direction suggestions", () => {
     const command = Bun.spawn(["bun", "tools/blog/cli.ts", "suggest"], { stdout: "pipe", stderr: "pipe" });
     expect(await command.exited).toBe(4);
     expect(await new Response(command.stderr).text()).toContain("Explicit --yes required");
+  });
+  test("normalizes model output with newlines, long text, and raw identifiers", () => {
+    const rawSuggestions = [
+      { id: "Topic_One", label: "Topic One with\nnewlines", detail: "Line 1\nLine 2\nLine 3\n" + "x".repeat(800) },
+      { id: "Topic-Two", label: "Topic Two " + "y".repeat(150), detail: "Detailed explanation without newlines" },
+      { id: "Topic Three", label: "Topic Three", detail: "Another valid direction for testing" },
+    ];
+    const parsed = suggestionsSchema.parse({ directions: rawSuggestions });
+    expect(parsed.directions).toHaveLength(3);
+    expect(parsed.directions[0].id).toBe("topic-one");
+    expect(parsed.directions[0].label).toBe("Topic One with newlines");
+    expect(parsed.directions[0].detail).not.toContain("\n");
+    expect(parsed.directions[0].detail.length).toBeLessThanOrEqual(700);
+    expect(parsed.directions[1].id).toBe("topic-two");
+    expect(parsed.directions[1].label.length).toBeLessThanOrEqual(100);
+    expect(parsed.directions[2].id).toBe("topic-three");
+  });
+  test("extractJson resiliently parses conversational wrappers and code fences", () => {
+    const conversational = 'User, here is the JSON you requested:\n```json\n{"directions": [{"id": "test", "label": "Test", "detail": "Test detail"}]}\n```\nHope this helps!';
+    expect(extractJson(conversational)).toEqual({ directions: [{ id: "test", label: "Test", detail: "Test detail" }] });
+
+    const plainPreamble = 'Sure! {"directions": [{"id": "test", "label": "Test", "detail": "Test detail"}]}';
+    expect(extractJson(plainPreamble)).toEqual({ directions: [{ id: "test", label: "Test", detail: "Test detail" }] });
+
+    const fence = '```json\n{"status": "ok"}\n```';
+    expect(extractJson(fence)).toEqual({ status: "ok" });
   });
 });
 

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { BlogService } from "../core";
+import { BlogService, rejectDraft } from "../core";
 import { bytes, text, Conflict, type Storage, type Stored } from "../storage";
 import { approve, cleanup, createWorkspace, loadWorkspace, hash, imageType } from "../workspace";
 import { articleInfo, parsePost, serializePost, jsonLd, manifestSchema, type Post } from "../../../lib/blog/contract";
@@ -148,6 +148,39 @@ describe("publishing safety", () => {
     expect(publishedIndex((await service.snapshot()).manifest.posts).posts).toHaveLength(0);
     await service.commit(await service.plan([{ type: "delete", slug: "test-post" }]), true);
     expect((await service.snapshot()).inventory.posts).toHaveLength(0);
+  });
+  test("rejectDraft completely removes draft from local workspace and remote inventory", async () => {
+    const { service } = await setup(), id = await workspace();
+    expect(await loadWorkspace(id)).toBeDefined();
+
+    // Rejection of purely local draft cleans up workspace
+    const localResult = await rejectDraft(id, service);
+    expect(localResult.removedFrom).toContain("local");
+    await expect(loadWorkspace(id)).rejects.toThrow();
+
+    // Rejection of draft present in remote inventory removes from both
+    const id2 = await workspace(meta("remote-draft", "draft"));
+    await service.commit(await service.plan([{ type: "upsert", workspace: id2 }]), true);
+    expect((await service.snapshot()).inventory.posts.some(p => p.meta.slug === "remote-draft")).toBe(true);
+
+    const fetchedId = await service.fetch("remote-draft");
+    expect(await loadWorkspace(fetchedId)).toBeDefined();
+
+    const remoteResult = await rejectDraft(fetchedId, service);
+    expect(remoteResult.removedFrom).toContain("remote");
+    expect(remoteResult.removedFrom).toContain("local");
+    expect((await service.snapshot()).inventory.posts.some(p => p.meta.slug === "remote-draft")).toBe(false);
+    await expect(loadWorkspace(fetchedId)).rejects.toThrow();
+  });
+  test("CLI reject requires explicit authorization and removes workspace", async () => {
+    const id = await workspace();
+    const noYes = Bun.spawn(["bun", "tools/blog/cli.ts", "reject", id], { stdout: "pipe", stderr: "pipe" });
+    expect(await noYes.exited).toBe(4);
+    expect(await new Response(noYes.stderr).text()).toContain("Explicit --yes required");
+
+    const withYes = Bun.spawn(["bun", "tools/blog/cli.ts", "reject", id, "--yes"], { stdout: "pipe", stderr: "pipe" });
+    expect(await withYes.exited).toBe(0);
+    await expect(loadWorkspace(id)).rejects.toThrow();
   });
   test("GC retains retired objects during grace and shared assets referenced by drafts", async () => {
     const { service, storage } = await setup(), id = await workspace(meta(), png);

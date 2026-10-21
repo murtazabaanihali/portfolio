@@ -6,7 +6,7 @@ import wrapAnsi from "wrap-ansi";
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { BlogService, type Plan } from "./core";
+import { BlogService, rejectDraft, type Plan } from "./core";
 import { R2Storage } from "./storage";
 import { approve, listWorkspaces, loadWorkspace, setStatus } from "./workspace";
 import { generate, generateBatch, generateCover, revise } from "./ai";
@@ -133,7 +133,7 @@ function App() {
     const [plan, setPlan] = useState<Plan>(),
         [input, setInput] = useState(""),
         [prompt, setPrompt] = useState<
-            "generate" | "revise" | "confirm" | null
+            "generate" | "revise" | "confirm" | "reject" | null
         >(null);
     const refresh = async () => setRows(await listWorkspaces());
     useEffect(() => {
@@ -265,6 +265,30 @@ function App() {
                         setMessage(
                             "Committed. Cleanup warnings, if any, appear above.",
                         );
+                    } else if (mode === "reject") {
+                        if (value.trim().toLowerCase() === "reject" || value.trim().toLowerCase() === "y") {
+                            const toReject = targets();
+                            setMessage(`Rejecting ${toReject.length} draft(s) everywhere…`);
+                            let count = 0;
+                            let serviceInstance: BlogService | undefined;
+                            try { serviceInstance = svc(); } catch {}
+                            for (const id of toReject) {
+                                try {
+                                    await rejectDraft(id, serviceInstance);
+                                    count++;
+                                } catch (e) {
+                                    setMessage(`Failed to reject ${id}: ${String(e)}`);
+                                }
+                            }
+                            setSelected(new Set());
+                            setPlan(undefined);
+                            setPane(null);
+                            setFocusedPane("list");
+                            setCursor((c) => Math.max(0, c - 1));
+                            setMessage(`Rejected and removed ${count} draft(s) everywhere.`);
+                        } else {
+                            setMessage("Not confirmed. No drafts removed.");
+                        }
                     } else setMessage("Not confirmed. Nothing published.");
                 });
                 return;
@@ -379,6 +403,10 @@ function App() {
             setPrompt("confirm");
             return;
         }
+        if (key === "x" && (current || selected.size)) {
+            setPrompt("reject");
+            return;
+        }
         task(async () => {
             if ((key === "v" || (info.return && focusedPane === "list")) && current) {
                 const w = await loadWorkspace(current.id);
@@ -485,14 +513,14 @@ function App() {
                         ↑↓/jk scroll · PgUp/PgDn page · Home/End top/bot · Esc/Tab/v back to list · q exit
                     </Text>
                     <Text dimColor>
-                        a approve · s status · d diff · e editor · c/o cover/viewer · p commit
+                        a approve · s status · d diff · e editor · c/o cover/viewer · p commit · x reject
                     </Text>
                 </>
             ) : (
                 <>
                     <Text dimColor>
                         ↑↓ select · space batch · v preview · d diff · a approve · s
-                        status · p commit · Tab preview
+                        status · p commit · x reject · Tab preview
                     </Text>
                     <Text dimColor>
                         n autonomous batch* · e editor · c/o cover/viewer · g generate* · r revise* · i retry
@@ -599,7 +627,9 @@ function App() {
                         ? "Brief JSON path (Enter authorizes model charges)"
                         : prompt === "revise"
                           ? "Revision instructions (Enter authorizes model charges)"
-                          : "Type publish to commit the reviewed plan"}
+                          : prompt === "reject"
+                            ? `Type reject to completely remove ${targets().length} draft(s) everywhere`
+                            : "Type publish to commit the reviewed plan"}
                     : {input}▌
                 </Text>
             )}

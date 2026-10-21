@@ -16,9 +16,34 @@ export const directionSchema = z.object({
   detail: directionText.max(700),
 }).strict();
 export type Direction = z.infer<typeof directionSchema>;
-export const suggestionsSchema = z.object({ directions: z.array(directionSchema).min(3).max(8) }).strict()
+export const suggestionsSchema = z.preprocess((val: unknown) => {
+  if (val && typeof val === "object" && Array.isArray((val as { directions?: unknown }).directions)) {
+    const rawDirections = (val as { directions: unknown[] }).directions;
+    const cleanedDirections = rawDirections.map((d: unknown, idx: number) => {
+      if (!d || typeof d !== "object") return d;
+      const obj = d as Record<string, unknown>;
+      let detail = typeof obj.detail === "string" ? obj.detail : "";
+      let label = typeof obj.label === "string" ? obj.label : "";
+      let id = typeof obj.id === "string" ? obj.id : "";
+
+      detail = detail.replace(/[\x00-\x1f\x7f]+/g, " ").replace(/\s+/g, " ").trim();
+      label = label.replace(/[\x00-\x1f\x7f]+/g, " ").replace(/\s+/g, " ").trim();
+
+      if (detail.length > 700) detail = detail.slice(0, 700).trim();
+      if (label.length > 100) label = label.slice(0, 100).trim();
+
+      id = id.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+      if (!id) id = `direction-${idx + 1}`;
+      if (id.length > 80) id = id.slice(0, 80).replace(/-+$/, "");
+
+      return { ...obj, id, label, detail };
+    });
+    return { ...val, directions: cleanedDirections.slice(0, 8) };
+  }
+  return val;
+}, z.object({ directions: z.array(directionSchema).min(3).max(8) }).strict()
   .refine(v => new Set(v.directions.map(d => d.id)).size === v.directions.length, "Direction IDs must be unique")
-  .refine(v => new Set(v.directions.map(d => d.label.toLowerCase())).size === v.directions.length, "Direction labels must be unique");
+  .refine(v => new Set(v.directions.map(d => d.label.toLowerCase())).size === v.directions.length, "Direction labels must be unique"));
 
 /** Explicitly paid suggestion step; no fixed choices or fallback menu. */
 export async function suggestDirections(deps: { catalog?: ArticleCatalog; complete?: typeof structuredCompletion } = {}) {
@@ -30,13 +55,32 @@ export async function suggestDirections(deps: { catalog?: ArticleCatalog; comple
     suggestionsSchema,
   )).directions;
 }
-export const autonomousSchema = z.object({
+export const autonomousSchema = z.preprocess((val: unknown) => {
+  if (val && typeof val === "object" && Array.isArray((val as { directions?: unknown }).directions)) {
+    const rawDirections = (val as { directions: unknown[] }).directions;
+    const cleanedDirections = rawDirections.map((d: unknown) => {
+      if (typeof d === "string") {
+        return d.replace(/[\x00-\x1f\x7f]+/g, " ").replace(/\s+/g, " ").trim();
+      }
+      if (d && typeof d === "object") {
+        const obj = d as Record<string, unknown>;
+        let detail = typeof obj.detail === "string" ? obj.detail.replace(/[\x00-\x1f\x7f]+/g, " ").replace(/\s+/g, " ").trim() : obj.detail;
+        let label = typeof obj.label === "string" ? obj.label.replace(/[\x00-\x1f\x7f]+/g, " ").replace(/\s+/g, " ").trim() : obj.label;
+        let id = typeof obj.id === "string" ? obj.id.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") : obj.id;
+        return { ...obj, id, label, detail };
+      }
+      return d;
+    });
+    return { ...val, directions: cleanedDirections };
+  }
+  return val;
+}, z.object({
   // CLI also accepts free-text directions; selected LLM objects retain their full scope.
   directions: z.array(z.union([directionSchema, directionText.max(700)])).min(1).max(8),
   count: z.number().int().min(1).max(10),
   mode: z.enum(["draft", "publish"]).default("draft"),
   allowExistingTopic: z.boolean().default(false),
-}).strict();
+}).strict());
 export type AutonomousOptions = z.input<typeof autonomousSchema>;
 const reviewSchema = z.object({ acceptable: z.boolean(), reasons: z.array(z.string()).max(20) }).strict();
 

@@ -80,7 +80,15 @@ export async function listWorkspaces() {
   } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return []; throw e; }
 }
 export async function cleanup(id: string) {
-  const path = await workspacePath(id);
-  // The entire UUID directory is exclusively tool-managed; original inputs and context live outside it.
-  await rm(path, { recursive: true });
+  if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Workspace ID must be a tool-created UUID");
+  try {
+    const path = await workspacePath(id);
+    await rm(path, { recursive: true, force: true });
+  } catch {
+    const root = await realpath(WORK_ROOT);
+    const path = join(root, id);
+    if (!(await lstat(path)).isSymbolicLink() && (await realpath(path)) === path) {
+      await rm(path, { recursive: true, force: true });
+    }
+  }
 }

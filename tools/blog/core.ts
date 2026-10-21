@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createTwoFilesPatch } from "diff";
 import { z } from "zod";
 import { HEAD_KEY, OBJECT_PREFIX, GRACE_MS, cdnUrl } from "../../lib/blog/config";
 import { headSchema, inventorySchema, manifestSchema, parsePost, serializePost, slugSchema, objectKey, type Entry, type Head, type Inventory, type Manifest } from "../../lib/blog/contract";
-import { bytes, text, Conflict, type Storage } from "./storage";
-import { loadWorkspace, cleanup, createWorkspace, hash } from "./workspace";
+import { bytes, text, Conflict, R2Storage, type Storage } from "./storage";
+import { loadWorkspace, cleanup, createWorkspace, hash, workspacePath } from "./workspace";
 
 const LOCK_KEY = "blog/publishing.lock";
 export const actionSchema = z.discriminatedUnion("type", [
@@ -294,4 +296,66 @@ export class BlogService {
     };
     return dryRun ? run() : this.locked(run);
   }
+}
+
+export async function rejectDraft(id: string, service?: BlogService): Promise<{ id: string; slug?: string; removedFrom: string[] }> {
+  let slug: string | undefined;
+  try {
+    const w = await loadWorkspace(id);
+    slug = w.meta.slug;
+  } catch {
+    try {
+      const p = await workspacePath(id);
+      const state = JSON.parse(await readFile(join(p, "state.json"), "utf8")) as { originalSlug?: string };
+      slug = state.originalSlug;
+    } catch {}
+  }
+
+  const removedFrom: string[] = [];
+
+  // 1. Remote R2 editorial inventory if present
+  if (slug) {
+    try {
+      const svc = service || new BlogService(new R2Storage());
+      const snapshot = await svc.snapshot(true);
+      if (snapshot.head && snapshot.inventory.posts.some(p => p.meta.slug === slug)) {
+        const plan = await svc.plan([{ type: "delete", slug }]);
+        await svc.commit(plan, true);
+        removedFrom.push("remote");
+      }
+    } catch {
+      // Remote R2 not configured or post was not in remote inventory
+    }
+  }
+
+  // 2. PostgreSQL database mirror if present
+  if (slug && process.env.DATABASE_URL) {
+    try {
+      const [{ default: db }, { blogPosts }, { eq }] = await Promise.all([
+        import("../../lib/db"),
+        import("../../lib/db/blog-schema"),
+        import("drizzle-orm"),
+      ]);
+      await db.delete(blogPosts).where(eq(blogPosts.slug, slug));
+      removedFrom.push("database");
+    } catch {
+      // Database not reachable
+    }
+  }
+
+  // 3. Catalog cache
+  try {
+    const { articleCatalog } = await import("./catalog");
+    articleCatalog().invalidate();
+  } catch {}
+
+  // 4. Local workspace
+  try {
+    await cleanup(id);
+    removedFrom.push("local");
+  } catch {
+    // Already cleaned or not found
+  }
+
+  return { id, slug, removedFrom };
 }

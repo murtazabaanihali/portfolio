@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { readFile, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { BlogService, batchSchema, type Action, type Plan } from "./core";
+import { BlogService, batchSchema, rejectDraft, type Action, type Plan } from "./core";
 import { R2Storage, Conflict } from "./storage";
 import { approve, cleanup, importPost, listWorkspaces, loadWorkspace, setStatus } from "./workspace";
 import { generate, generateBatch, generateCover, revise } from "./ai";
@@ -28,6 +28,7 @@ gc [--yes]                         List garbage; delete only with --yes and grac
 lock-status                        Inspect a stranded publishing lock
 unlock <owner> --yes --no-active-writers  Manual recovery ONLY after stopping all writers
 clean <id> --yes                    Explicitly discard owned local work
+reject <id...> --yes                Completely remove drafts everywhere (local, DB, remote)
 generate <brief.json> --yes [--allow-existing-topic]  Paid text + cover; array supports batches
 autonomous <batch.json> --yes       Bounded batch; mode draft or publish (live requires --auto-publish)
 suggest --yes                      Paid LLM topic directions from DB/local coverage and context
@@ -74,6 +75,14 @@ async function main() {
     }
     case "approve": result = await approve(required()); break;
     case "clean": requireYes(); await cleanup(required()); result = { cleaned: ids[0] }; break;
+    case "reject": {
+      requireYes();
+      const toReject = ids.length ? ids : [required()];
+      let svc: BlogService | undefined;
+      try { svc = service(); } catch {}
+      result = await Promise.all(toReject.map(id => rejectDraft(id, svc)));
+      break;
+    }
     case "list": result = (await service().snapshot()).inventory.posts.map(e => ({ ...e.meta, revision: e.revision })); break;
     case "fetch": result = { id: await service().fetch(required()) }; break;
     case "init": requireYes(); result = await service().initialize(); break;
