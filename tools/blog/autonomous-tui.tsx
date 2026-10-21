@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import { directions, runAutonomous, type AutonomousOptions } from "./autonomous";
+import { suggestDirections, runAutonomous, type AutonomousOptions, type Direction } from "./autonomous";
 
 export function AutonomousWizard({ onClose }: { onClose: () => void }) {
-  const [step, setStep] = useState<"directions" | "count" | "settings" | "confirm" | "running" | "done">("directions");
+  const [step, setStep] = useState<"suggest" | "suggesting" | "directions" | "count" | "settings" | "confirm" | "running" | "done">("suggest");
+  const [directions, setDirections] = useState<Direction[]>([]);
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [count, setCount] = useState("3");
@@ -14,7 +15,7 @@ export function AutonomousWizard({ onClose }: { onClose: () => void }) {
   const [output, setOutput] = useState("");
   const [offset, setOffset] = useState(0);
   useInput((key, info) => {
-    if (step === "running") return;
+    if (step === "running" || step === "suggesting") return;
     if (info.escape) { onClose(); return; }
     if (step === "done") {
       if (key === "q" || info.return) onClose();
@@ -22,7 +23,24 @@ export function AutonomousWizard({ onClose }: { onClose: () => void }) {
       if (info.upArrow) setOffset(o => Math.max(0, o - 1));
       return;
     }
+    if (step === "suggest") {
+      if (info.return) {
+        setStep("suggesting");
+        setMessage("");
+        void suggestDirections().then(suggestions => {
+          setDirections(suggestions);
+          setSelected(new Set());
+          setCursor(0);
+          setStep("directions");
+        }).catch(error => {
+          setMessage(String(error));
+          setStep("suggest");
+        });
+      }
+      return;
+    }
     if (step === "directions") {
+      if (key === "r") { setMessage(""); setStep("suggest"); return; }
       if (info.upArrow) setCursor(i => Math.max(0, i - 1));
       if (info.downArrow) setCursor(i => Math.min(directions.length - 1, i + 1));
       if (key === " ") setSelected(previous => {
@@ -43,7 +61,7 @@ export function AutonomousWizard({ onClose }: { onClose: () => void }) {
       else if (!info.ctrl && !info.meta && key) setConfirmation(s => s + key);
       if (info.return && confirmation === (publish ? "publish" : "draft")) {
         setStep("running");
-        const options: AutonomousOptions = { directions: [...selected] as AutonomousOptions["directions"], count: Number(count), mode: publish ? "publish" : "draft", allowExistingTopic };
+        const options: AutonomousOptions = { directions: directions.filter(d => selected.has(d.id)), count: Number(count), mode: publish ? "publish" : "draft", allowExistingTopic };
         void runAutonomous(options, setMessage).then(result => setOutput(JSON.stringify(result, null, 2)))
           .catch(error => setOutput(String(error))).finally(() => setStep("done"));
       }
@@ -53,10 +71,16 @@ export function AutonomousWizard({ onClose }: { onClose: () => void }) {
   return <Box flexDirection="column" padding={1}>
     <Text bold color="magenta">Autonomous blog batch — DHEM / portfolio</Text>
     <Text dimColor>Esc cancels before starting. This is a bounded run, not a recurring scheduler.</Text>
+    {step === "suggest" && <>
+      <Text>Ask the LLM to suggest topic directions from your editorial context, DB articles, and local drafts.</Text>
+      <Text color="yellow">Enter authorizes paid text-model calls for suggestions only. No articles will be generated or published yet.</Text>
+      {message && <Text color="red">{clean(message)} — Enter retries; Esc cancels. No predefined fallback suggestions.</Text>}
+    </>}
+    {step === "suggesting" && <Text color="yellow">Reading DB/local coverage and asking the LLM for topic directions…</Text>}
     {step === "directions" && <>
-      <Text>Select directions: ↑↓ move · space multi-select · Enter continue</Text>
-      {directions.map((d, i) => <Text key={d.id} color={cursor === i ? "magenta" : undefined}>{cursor === i ? "›" : " "} {selected.has(d.id) ? "☑" : "□"} {d.label}</Text>)}
-      <Text dimColor>{directions[cursor].detail}</Text>
+      <Text>Select LLM suggestions: ↑↓ move · space multi-select · Enter continue · r request new suggestions</Text>
+      {directions.map((d, i) => <Text key={d.id} color={cursor === i ? "magenta" : undefined}>{cursor === i ? "›" : " "} {selected.has(d.id) ? "☑" : "□"} {clean(d.label)}</Text>)}
+      <Text dimColor>{clean(directions[cursor]?.detail || "")}</Text>
     </>}
     {step === "count" && <Text>Number of articles (1–10; Backspace to edit): {count}▌</Text>}
     {step === "settings" && <>

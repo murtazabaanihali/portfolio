@@ -8,17 +8,30 @@ import { BlogService } from "./core";
 import { R2Storage } from "./storage";
 import { CONTEXT_PATH, loadWorkspace, setStatus } from "./workspace";
 
-// Suggestions require no paid call. The model proposes specific article angles within the selected directions.
-export const directions = [
-  { id: "email-apis", label: "Email APIs & developer experience", detail: "Transactional email, API/SDK design, and relevant Dhesend use cases" },
-  { id: "social-workflows", label: "Social conversations & automation", detail: "Useful reply workflows, integration boundaries, and relevant iReplyy use cases" },
-  { id: "ai-agents", label: "Practical AI & agent engineering", detail: "Tool boundaries, evaluation, reliability, and honest limitations" },
-  { id: "solo-founder", label: "Building products under DHEM", detail: "Scoping, shipping, maintainable SaaS, and solo-founder decisions without invented stories" },
-  { id: "full-stack", label: "Full-stack architecture & performance", detail: "Concrete engineering explanations, cloud trade-offs, and debugging" },
-  { id: "accessible-ux", label: "Thoughtful UX & accessibility", detail: "Usable interfaces, implementation patterns, and accessibility trade-offs" },
-] as const;
+const directionText = z.string().trim().min(3).regex(/^[^\x00-\x1f\x7f]+$/, "Use single-line direction text");
+export const directionSchema = z.object({
+  id: z.string().min(1).max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  label: directionText.max(100),
+  detail: directionText.max(700),
+}).strict();
+export type Direction = z.infer<typeof directionSchema>;
+export const suggestionsSchema = z.object({ directions: z.array(directionSchema).min(3).max(8) }).strict()
+  .refine(v => new Set(v.directions.map(d => d.id)).size === v.directions.length, "Direction IDs must be unique")
+  .refine(v => new Set(v.directions.map(d => d.label.toLowerCase())).size === v.directions.length, "Direction labels must be unique");
+
+/** Explicitly paid suggestion step; no fixed choices or fallback menu. */
+export async function suggestDirections(deps: { catalog?: ArticleCatalog; complete?: typeof structuredCompletion } = {}) {
+  const existing = await (deps.catalog || articleCatalog()).all(true);
+  const context = await readFile(CONTEXT_PATH, "utf8");
+  return (await (deps.complete || structuredCompletion)(
+    `Suggest 3–8 diverse, specific topic directions for Murtaza's developer portfolio and DHEM umbrella brand. Derive the choices from the supplied editorial context and existing coverage, not a fixed category menu. Each direction should identify a reader problem, a useful new angle or coverage gap, and why it suits this author. Prefer substantive evergreen topics; do not invent personal experience, product features, market demand metrics, or keyword volumes. Avoid merely rephrasing existing posts. Return {"directions":[{"id":"short-unique-slug","label":"Concise selectable direction","detail":"Audience, useful scope, and distinct angle"}]}. Labels max 100 characters, details max 700 characters.`,
+    { editorialContext: context, existingCoverage: existing.slice(0, 200), totalExistingArticles: existing.length },
+    suggestionsSchema,
+  )).directions;
+}
 export const autonomousSchema = z.object({
-  directions: z.array(z.enum(directions.map(d => d.id))).min(1).max(directions.length).transform(v => [...new Set(v)]),
+  // CLI also accepts free-text directions; selected LLM objects retain their full scope.
+  directions: z.array(z.union([directionSchema, directionText.max(700)])).min(1).max(8),
   count: z.number().int().min(1).max(10),
   mode: z.enum(["draft", "publish"]).default("draft"),
   allowExistingTopic: z.boolean().default(false),
@@ -49,7 +62,7 @@ export async function runAutonomous(input: AutonomousOptions, onStatus: (message
   onStatus("Planning distinct article angles (paid text call)…");
   const planned = await complete(
     `You are the editorial planner for Murtaza's portfolio and DHEM umbrella brand. Plan exactly the requested number of useful articles across the selected directions. Prioritize reader questions and original, specific angles rather than generic SEO filler. Avoid covered search intents unless allowExistingTopic is true; even then require a distinct angle and a NEW slug. Do not invent personal stories or unsupported product facts. Do not assign sources or URLs: the writing stage uses maintained context. Return {"briefs": [...]} where each brief has slug, brief (detailed reader question, search intent, unique angle, useful examples, limitations), category, tags, coverAlt. Categories: ${categories.map(c => c.slug).join(", ")}.`,
-    { count: options.count, selectedDirections: directions.filter(d => options.directions.includes(d.id)), allowExistingTopic: options.allowExistingTopic, editorialContext: context,
+    { count: options.count, selectedDirections: options.directions, allowExistingTopic: options.allowExistingTopic, editorialContext: context,
       // Bound prompt size; per-article search still checks the entire catalog, not this sample.
       existingCoverage: existing.slice(0, 200), totalExistingArticles: existing.length },
     z.object({ briefs: z.array(briefSchema.omit({ sources: true, urls: true, research: true, allowExistingTopic: true })).length(options.count) }).strict(),

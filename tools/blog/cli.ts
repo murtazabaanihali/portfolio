@@ -5,7 +5,7 @@ import { BlogService, batchSchema, type Action, type Plan } from "./core";
 import { R2Storage, Conflict } from "./storage";
 import { approve, cleanup, importPost, listWorkspaces, loadWorkspace, setStatus } from "./workspace";
 import { generate, generateBatch, generateCover, revise } from "./ai";
-import { runAutonomous } from "./autonomous";
+import { runAutonomous, suggestDirections } from "./autonomous";
 import { articleCatalog, searchArticles } from "./catalog";
 
 const help = `Local blog workflow (never runs in the Worker)
@@ -30,7 +30,8 @@ unlock <owner> --yes --no-active-writers  Manual recovery ONLY after stopping al
 clean <id> --yes                    Explicitly discard owned local work
 generate <brief.json> --yes [--allow-existing-topic]  Paid text + cover; array supports batches
 autonomous <batch.json> --yes       Bounded batch; mode draft or publish (live requires --auto-publish)
-related <query>                    Cached metadata search including local and remote coverage
+suggest --yes                      Paid LLM topic directions from DB/local coverage and context
+related <query>                    Cached metadata search of DB and local coverage
 cover <id> --yes [--regenerate]     Retry/reuse cover (regenerate only explicitly)
 revise <id> --instructions "..." --yes
 tui                                Keyboard review, diff, approval, editor, generation
@@ -98,6 +99,7 @@ async function main() {
       }
       break;
     }
+    case "suggest": requireYes(); result = { directions: await suggestDirections() }; break;
     case "related": result = searchArticles(await articleCatalog().all(), { topic: required() }); break;
     case "autonomous": {
       requireYes();

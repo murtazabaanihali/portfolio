@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { ArticleCatalog, searchArticles, summarize, type ArticleSummary } from "../catalog";
-import { autonomousSchema, invalidInternalLinks, runAutonomous } from "../autonomous";
+import { autonomousSchema, invalidInternalLinks, runAutonomous, suggestDirections, suggestionsSchema } from "../autonomous";
 import { BlogService } from "../core";
 import { type Storage, type Stored, Conflict } from "../storage";
 import { cleanup, createWorkspace, hash, loadWorkspace } from "../workspace";
@@ -33,6 +33,53 @@ function generator(warnings: string[] = []): typeof generate {
     ids.push(id); return { id, warnings, textModel: "mock", cover: { id, reused: false, model: "mock" } };
   }) as typeof generate;
 }
+
+describe("LLM direction suggestions", () => {
+  const suggestions = [
+    { id: "retry-budgets", label: "Retry budgets for email workers", detail: "Help API builders prevent cascading retry failures with bounded budgets." },
+    { id: "inbox-handoffs", label: "Human handoffs in automated inboxes", detail: "Explain when automation should defer to a person without inventing product behavior." },
+    { id: "safe-tool-calls", label: "Making tool calls safe to repeat", detail: "Show idempotency boundaries for developers integrating agents." },
+  ];
+  test("suggestions receive DB/local coverage and brand context, not predefined choices", async () => {
+    const localId = await createWorkspace(serializePost(post("local-suggestion-context"), "Useful local notes about reliable email delivery and bounded retries.")); ids.push(localId);
+    const catalog = new ArticleCatalog(async () => [summarize({ ...post("db-suggestion-context"), status: "published" })]);
+    const complete = (async (_instruction: string, input: unknown, schema: { parse: (v: unknown) => unknown }) => {
+      const data = input as { editorialContext: string; existingCoverage: ArticleSummary[] };
+      expect(data.editorialContext).toContain("DHEM");
+      expect(data.existingCoverage.map(p => p.slug)).toContain("db-suggestion-context");
+      expect(data.existingCoverage.map(p => p.slug)).toContain("local-suggestion-context");
+      expect(input).not.toHaveProperty("selectedDirections");
+      return schema.parse({ directions: suggestions });
+    }) as typeof structuredCompletion;
+    expect(await suggestDirections({ catalog, complete })).toEqual(suggestions);
+  });
+  test("validates bounded unique suggestions and accepts arbitrary selected directions", () => {
+    expect(() => suggestionsSchema.parse({ directions: [suggestions[0], suggestions[0], suggestions[1]] })).toThrow();
+    expect(() => suggestionsSchema.parse({ directions: [] })).toThrow();
+    expect(autonomousSchema.parse({ directions: [suggestions[0], "A completely new reader problem"], count: 1 }).directions).toEqual([suggestions[0], "A completely new reader problem"]);
+  });
+  test("DB failure stops before any model call; no fixed fallback menu", async () => {
+    let calls = 0;
+    const catalog = new ArticleCatalog(async () => { throw new Error("DB unavailable"); });
+    const complete = (async () => { calls++; throw new Error("Unexpected paid call"); }) as typeof structuredCompletion;
+    await expect(suggestDirections({ catalog, complete })).rejects.toThrow("DB unavailable");
+    expect(calls).toBe(0);
+  });
+  test("selected LLM detail survives into article planning", async () => {
+    const deps = await setup();
+    const complete = (async (_instruction: string, input: unknown, schema: { parse: (v: unknown) => unknown }) => {
+      expect((input as { selectedDirections: unknown }).selectedDirections).toEqual([suggestions[0]]);
+      return schema.parse({ briefs: [brief] });
+    }) as typeof structuredCompletion;
+    const result = await runAutonomous({ directions: [suggestions[0]], count: 1 }, undefined, { ...deps, complete, generate: generator() });
+    expect(result.results[0].status).toBe("draft");
+  });
+  test("CLI suggestion call requires explicit authorization", async () => {
+    const command = Bun.spawn(["bun", "tools/blog/cli.ts", "suggest"], { stdout: "pipe", stderr: "pipe" });
+    expect(await command.exited).toBe(4);
+    expect(await new Response(command.stderr).text()).toContain("Explicit --yes required");
+  });
+});
 
 describe("catalog coverage", () => {
   test("coalesces DB queries, honors TTL, refreshes and invalidates", async () => {

@@ -146,7 +146,7 @@ Manual unlock compares the owner but is not a distributed lease/fencing system. 
 
 Press **`n` in Blog Studio** to open the autonomous wizard:
 
-1. Select multiple suggested directions with ↑/↓ and Space. Suggestions cover email APIs/Dhesend, social workflows/iReplyy, AI agents, products under DHEM, full-stack engineering, and accessible UX. These curated suggestions do not cost model credits; the planner generates specific angles within the selected directions.
+1. Confirm the initial paid **LLM suggestion** step with Enter. The model proposes 3–8 topic directions using your maintained editorial/DHEM context and DB/local article coverage—there is no fixed menu. Multi-select suggestions with ↑/↓ and Space; the highlighted suggestion explains its audience and angle. Press `r` to request a fresh set (requires another paid-call confirmation). DB/provider failures show an error and allow an explicit retry, not a predefined fallback.
 2. Enter an article count (1–10).
 3. Choose **local drafts** (default) or **auto-accept and publish live** with `p`.
 4. Toggle `o` to continue on likely covered topics with a distinct angle. Existing slugs are always protected.
@@ -155,6 +155,7 @@ Press **`n` in Blog Studio** to open the autonomous wizard:
 This is a bounded local run, not a recurring background scheduler. It stops after processing the requested plans; skipped/failed plans are reported rather than replaced with unbounded paid retries. Existing model fallback/timeouts still apply. There is no monetary spending cap: count limits articles, not provider charges. Review mode and count before confirming.
 
 ```sh
+bun run blog suggest --yes             # LLM-generated direction objects, no articles/publishing
 bun run blog related 'transactional email retries'
 bun run blog generate tools/blog/examples/brief.json --yes --allow-existing-topic
 bun run blog autonomous tools/blog/examples/autonomous.json --yes
@@ -162,7 +163,7 @@ bun run blog autonomous tools/blog/examples/autonomous.json --yes
 bun run blog autonomous /path/live-batch.json --yes --auto-publish
 ```
 
-The batch file contains `directions` (IDs from `autonomous.ts`), `count`, `mode` (`draft` or `publish`), and `allowExistingTopic`. A single-generation brief also accepts `allowExistingTopic: true`. The CLI flag overrides that field. A topic override permits a **new-angle follow-up**, never replacing an existing slug. Editing remains the explicit `fetch`/review/publish workflow.
+The batch file contains `directions` (selected LLM `{id, label, detail}` objects, or free-text descriptions for CLI use), `count`, `mode` (`draft` or `publish`), and `allowExistingTopic`. Directions are not restricted to predefined IDs. The TUI passes selected objects intact to the planner, including each proposed scope and angle. `suggest --yes` returns suggestions only; select the desired objects and add the other batch fields before running `autonomous`. A single-generation brief also accepts `allowExistingTopic: true`. The CLI flag overrides that field. A topic override permits a **new-angle follow-up**, never replacing an existing slug. Editing remains the explicit `fetch`/review/publish workflow.
 
 ### Query and cache behavior
 

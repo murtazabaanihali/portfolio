@@ -1,5 +1,5 @@
 {
-  "directions": ["email-apis", "ai-agents", "solo-founder"],
+  "directions": ["Reliable transactional email retries for API developers", "Practical safety boundaries for AI tool calls", "Scoping maintainable products as a solo founder"],
   "count": 3,
   "mode": "draft",
   "allowExistingTopic": false
