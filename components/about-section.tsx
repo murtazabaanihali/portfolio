@@ -32,7 +32,7 @@ export function AboutSection() {
                                         </AvatarFallback>
                                     </Avatar>
                                     <p className="text-muted-foreground font-medium">
-                                        Professional full-stack Developer
+                                        Professional Full-Stack Developer
                                     </p>
                                 </div>
                             </div>
@@ -57,7 +57,7 @@ export function AboutSection() {
                                                 </AvatarFallback>
                                             </Avatar>
                                             <p className="text-muted-foreground font-medium">
-                                                Professional full-stack Developer
+                                                Professional Full-Stack Developer
                                             </p>
                                         </div>
                                     </div>

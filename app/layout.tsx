@@ -19,7 +19,7 @@ export const metadata: Metadata = {
         template: "%s | Murtaza Baanihali",
     },
     description:
-        "Full-Stack Developer with 5 years of hands-on programming experience, driven by a passion for turning complex ideas into shipped, user-centric products. Having developed a strong technical foundation since 8th grade, I specialize in end-to-end development—from initialscoping and UX to deploying scalable architectures using MERN, PERN and python based stacks. As the founder of multiple SaaS platformslike iReplyy, Dhesend, and Tajven, I bring an entrepreneurial mindset, a focus on performance, and a dedication to writing clean,maintainable code.",
+        "Full-Stack Developer with 5 years of hands-on programming experience, driven by a passion for turning complex ideas into shipped, user-centric products. Having developed a strong technical foundation since 8th grade, I specialize in end-to-end development—from initial scoping and UX to deploying scalable architectures using MERN, PERN, and Python-based stacks. As the founder of multiple SaaS platforms like iReplyy, Dhesend, and Tajven, I bring an entrepreneurial mindset, a focus on performance, and a dedication to writing clean, maintainable code.",
     keywords: [
         "Murtaza Baanihali",
         "Full-Stack Developer",

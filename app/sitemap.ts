@@ -2,15 +2,20 @@ import type { MetadataRoute } from "next";
 import db from "@/lib/db";
 import { siteUrl } from "@/lib/blog/config";
 import { getPublished } from "@/lib/blog/store";
+import { withRedisCache } from "@/lib/cache";
 export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  // Read all project slugs, not just the first listing page. Fail on upstream errors
-  // rather than serving an apparently complete sitemap with silently dropped URLs.
-  const [projects, { posts }] = await Promise.all([
-    db.query.projects.findMany({ columns: { slug: true, createdAt: true, updatedAt: true } }),
+  const [projectsResult, blogResult] = await Promise.allSettled([
+    withRedisCache("cache:sitemap:projects", 3600, () =>
+      db.query.projects.findMany({ columns: { slug: true, createdAt: true, updatedAt: true } })
+    ),
     getPublished(),
   ]);
+
+  const projects = projectsResult.status === "fulfilled" ? projectsResult.value : [];
+  const posts = blogResult.status === "fulfilled" ? blogResult.value.posts : [];
+
   return [
     { url: siteUrl(), changeFrequency: "weekly", priority: 1 },
     { url: siteUrl("/projects"), changeFrequency: "weekly", priority: 0.8 },

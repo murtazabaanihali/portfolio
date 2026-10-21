@@ -12,27 +12,28 @@ import { NAVIGATION_ITEMS } from "@/components/constant";
 import { cn } from "@/lib/utils";
 
 export function Navigation() {
-    const [active, setActive] = useState<string>();
+    const [currentHash, setCurrentHash] = useState("");
+    const [isOpen, setIsOpen] = useState(false);
     const pathname = usePathname();
 
-    const revalidate = () => {
-        const hash = window.location.pathname + window.location.hash;
-        setActive(hash);
-    };
-
     const onClick = () => {
-        setTimeout(revalidate, 30);
+        setTimeout(() => {
+            if (typeof window !== "undefined") {
+                setCurrentHash(window.location.hash);
+            }
+        }, 30);
     };
 
     const isActive = (href: string) => {
-        return href === active || (href === "/blog" && pathname.startsWith("/blog/"));
+        const full = pathname + currentHash;
+        return href === full || (href === "/" && pathname === "/" && !currentHash) || (href === "/blog" && pathname.startsWith("/blog/"));
     };
 
     useEffect(() => {
-        if (typeof window !== "undefined") {
-            setActive(window.location.pathname + window.location.hash);
-        }
-    }, [pathname]);
+        const handleHash = () => setCurrentHash(window.location.hash);
+        window.addEventListener("hashchange", handleHash);
+        return () => window.removeEventListener("hashchange", handleHash);
+    }, []);
 
     return (
         <header className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-4xl px-4">
@@ -70,7 +71,7 @@ export function Navigation() {
                     </div>
                     <div className="md:hidden flex items-center gap-2">
                         <ThemeToggle />
-                        <Sheet>
+                        <Sheet open={isOpen} onOpenChange={setIsOpen}>
                             <SheetTrigger asChild>
                                 <Button variant="ghost" size="icon">
                                     <Menu className="h-5 w-5" />
@@ -82,7 +83,10 @@ export function Navigation() {
                                         <Link
                                             key={item.name}
                                             href={item.href}
-                                            onClick={onClick}
+                                            onClick={() => {
+                                                onClick();
+                                                setIsOpen(false);
+                                            }}
                                             className={cn(
                                                 "px-4 py-3 rounded-lg text-lg font-medium transition-colors",
                                                 isActive(item.href)

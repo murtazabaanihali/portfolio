@@ -82,7 +82,8 @@ export function walk(node: Root | RootContent, fn: (node: Root | RootContent) =>
 }
 export function parsePost(raw: string, local = false): { meta: Post; body: string } {
   if (raw.length > 500_000) throw new Error("Markdown exceeds 500KB");
-  const match = raw.replace(/^\uFEFF/, "").match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]+)$/);
+  const cleaned = raw.replace(/^\uFEFF/, "").trim().replace(/^```(?:markdown|md)?\r?\n/i, "").replace(/\r?\n```$/i, "");
+  const match = cleaned.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]+)$/);
   if (!match) throw new Error("Expected YAML frontmatter and a nonempty Markdown body");
   const document = parseDocument(match[1], { uniqueKeys: true });
   if (document.errors.length) throw new Error(document.errors[0].message);

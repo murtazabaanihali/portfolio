@@ -17,10 +17,17 @@ import { PROJECT_FILTER_MAP } from "@/components/constant";
 import { getImageFullURL } from "@/lib/utils";
 import { useProjects } from "@/lib/swr";
 import { trackUmamiEvent } from "@/lib/analytics";
+import { getProjects } from "@/actions";
 
-export const ProjectsClientSide = () => {
+type ProjectsData = Awaited<ReturnType<typeof getProjects>>;
+
+interface ProjectsClientSideProps {
+    initialData?: ProjectsData;
+}
+
+export const ProjectsClientSide = ({ initialData }: ProjectsClientSideProps) => {
     const { data, isValidating, isLoading, loadMore, tag, onTag } =
-        useProjects();
+        useProjects(initialData);
 
     return (
         <div className="container mx-auto px-4">

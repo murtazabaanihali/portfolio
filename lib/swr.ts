@@ -5,7 +5,9 @@ import { getProjectBySlug, getProjects } from "@/actions";
 import { ProjectTag } from "@/lib/db/schema";
 import useSWR from "swr";
 
-export const useProjects = () => {
+type ProjectsData = Awaited<ReturnType<typeof getProjects>>;
+
+export const useProjects = (initialData?: ProjectsData) => {
     const [tag, setTag] = useState<ProjectTag | undefined>();
 
     const getKey = (pageIndex: number, previousPageData: any) => {
@@ -20,21 +22,23 @@ export const useProjects = () => {
 
     const { data, isLoading, isValidating, size, setSize, mutate } =
         useSWRInfinite(getKey, fetcher, {
+            fallbackData: initialData && !tag ? [initialData] : undefined,
             revalidateOnFocus: false,
             revalidateFirstPage: false,
         });
 
     const flattenedData = useMemo(() => {
-        const projects = data
-            ? data.flatMap((page) => page?.projects || [])
+        const sourceData = data || (initialData && !tag ? [initialData] : undefined);
+        const projects = sourceData
+            ? sourceData.flatMap((page) => page?.projects || [])
             : undefined;
-        const lastPage = data && data.length > 0 ? data[data.length - 1] : null;
+        const lastPage = sourceData && sourceData.length > 0 ? sourceData[sourceData.length - 1] : null;
 
         return {
             projects,
             more: lastPage?.more ?? null,
         };
-    }, [data]);
+    }, [data, initialData, tag]);
 
     const loadMore = () => {
         if (!flattenedData?.more || size === 0) return;

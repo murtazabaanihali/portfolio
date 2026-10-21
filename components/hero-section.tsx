@@ -19,8 +19,8 @@ export function HeroSection() {
                 <p className="text-lg md:text-xl text-muted-foreground mb-12 max-w-3xl mx-auto leading-relaxed">
                     I am a full-stack developer who loves turning ideas into real applications. Over
                     the years, I have built web and mobile products that focus on being simple to
-                    use and flexible enough to grow with you. With full stack developer I am also a
-                    founder of some projects like iReplyy, Dhesend, and Tajven.
+                    use and flexible enough to grow with you. Along with full-stack development, I am also
+                    the founder of projects like iReplyy, Dhesend, and Tajven.
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">

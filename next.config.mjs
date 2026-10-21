@@ -15,6 +15,14 @@ const nextConfig = {
       },
     ],
   },
+  turbopack: {
+    rules: {
+      "*.md": {
+        loaders: ["raw-loader"],
+        as: "*.js",
+      },
+    },
+  },
   webpack: (config) => {
     config.module.rules.push({
       test: /\.md$/,
@@ -23,6 +31,7 @@ const nextConfig = {
     return config;
   },
   async rewrites() {
+    if (!process.env.ANALYTICS_URL) return [];
     return [
       {
         source: "/tk.js",

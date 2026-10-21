@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ProjectsClientSide } from "@/components/projects";
+import { getProjects } from "@/actions";
 
 export const metadata: Metadata = {
     title: "Projects",
@@ -17,9 +18,11 @@ export const metadata: Metadata = {
 };
 
 export default async function ProjectsPage() {
+    const initialData = await getProjects(1);
+
     return (
         <main className="min-h-screen pt-40 md:pt-52 pb-20">
-            <ProjectsClientSide />
+            <ProjectsClientSide initialData={initialData} />
         </main>
     );
 };

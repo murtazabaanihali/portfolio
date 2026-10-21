@@ -133,6 +133,7 @@ export class BlogService {
       if (again.token !== plan.token) throw new Conflict("Remote or local state changed while acquiring lock");
       const baseline = await this.snapshot(), commit = randomUUID(), prefix = OBJECT_PREFIX + commit + "/";
       const posts = [...baseline.inventory.posts], owned: { id: string; fingerprint: string }[] = [];
+      const mutations: { type: "upsert" | "unpublish" | "delete"; slug: string; entry?: Entry }[] = [];
       for (const change of plan.changes) {
         const previous = posts.find(e => e.meta.slug === change.slug);
         let next: Entry | undefined;
@@ -154,6 +155,7 @@ export class BlogService {
           await this.verifiedPut(key, bytes(raw), "text/markdown; charset=utf-8");
           next = { meta, key, revision: hash(raw), assets };
           owned.push({ id: w.id, fingerprint: w.fingerprint });
+          mutations.push({ type: "upsert", slug: change.slug, entry: next });
         } else if (change.action.type === "unpublish") {
           const prior = await this.storage.get(previous!.key);
           if (!prior) throw new Error("Article disappeared");
@@ -161,6 +163,9 @@ export class BlogService {
           const raw = serializePost(meta, parsePost(text(prior)).body), key = prefix + change.slug + ".md";
           await this.verifiedPut(key, bytes(raw), "text/markdown; charset=utf-8");
           next = { ...previous!, meta, key, revision: hash(raw) };
+          mutations.push({ type: "unpublish", slug: change.slug, entry: next });
+        } else if (change.action.type === "delete") {
+          mutations.push({ type: "delete", slug: change.slug });
         }
         const index = posts.findIndex(e => e.meta.slug === change.slug);
         if (index >= 0) posts.splice(index, 1);
@@ -190,9 +195,63 @@ export class BlogService {
       }
       const check = await this.storage.get(HEAD_KEY);
       if (!check || text(check) !== new TextDecoder().decode(payload)) throw new Error("Commit verification uncertain; retain local work and inspect remote state");
-      return { commit, owned };
+      return { commit, owned, mutations };
     });
     const cleanupWarnings: string[] = this.lockWarnings.splice(0);
+    if (process.env.DATABASE_URL) {
+      try {
+        const [{ default: db }, { blogPosts }, { eq }] = await Promise.all([
+          import("../../lib/db"),
+          import("../../lib/db/blog-schema"),
+          import("drizzle-orm"),
+        ]);
+        for (const mut of committed.mutations) {
+          if (mut.entry) {
+            const { meta, key: contentKey, revision } = mut.entry;
+            const values = {
+              slug: meta.slug,
+              title: meta.title,
+              description: meta.description,
+              author: meta.author,
+              status: meta.status,
+              category: meta.category as (typeof blogPosts.$inferInsert)["category"],
+              tags: meta.tags,
+              publishedAt: meta.publishedAt ? new Date(meta.publishedAt) : null,
+              updatedAt: meta.updatedAt ? new Date(meta.updatedAt) : null,
+              coverSrc: meta.cover.src,
+              coverAlt: meta.cover.alt,
+              contentKey,
+              revision,
+            };
+            await db.insert(blogPosts).values(values).onConflictDoUpdate({
+              target: blogPosts.slug,
+              set: {
+                title: values.title,
+                description: values.description,
+                author: values.author,
+                status: values.status,
+                category: values.category,
+                tags: values.tags,
+                publishedAt: values.publishedAt,
+                updatedAt: values.updatedAt,
+                coverSrc: values.coverSrc,
+                coverAlt: values.coverAlt,
+                contentKey: values.contentKey,
+                revision: values.revision,
+              },
+            });
+          } else if (mut.type === "delete") {
+            await db.delete(blogPosts).where(eq(blogPosts.slug, mut.slug));
+          }
+        }
+        try {
+          const { articleCatalog } = await import("./catalog");
+          articleCatalog().invalidate();
+        } catch {}
+      } catch (e) {
+        cleanupWarnings.push(`Database mirror sync warning: ${String(e)}`);
+      }
+    }
     for (const w of committed.owned) {
       try {
         if ((await loadWorkspace(w.id)).fingerprint !== w.fingerprint) throw new Error("Workspace edited after commit; preserving it");

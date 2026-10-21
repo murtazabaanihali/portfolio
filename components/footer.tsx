@@ -36,6 +36,24 @@ export function Footer() {
                         ))}
                     </nav>
 
+                    <nav className="mt-6 md:mt-0 flex flex-col gap-1">
+                        <span className="text-xs uppercase text-muted-foreground font-medium mb-1">
+                            Legal
+                        </span>
+                        <Link
+                            href="/privacy"
+                            className="hover:text-foreground text-muted-foreground transition-colors"
+                        >
+                            Privacy Policy
+                        </Link>
+                        <Link
+                            href="/terms"
+                            className="hover:text-foreground text-muted-foreground transition-colors"
+                        >
+                            Terms of Service
+                        </Link>
+                    </nav>
+
                     <div className="mt-6 md:mt-0">
                         <span className="text-xs uppercase text-muted-foreground font-medium mb-1">
                             Connect
