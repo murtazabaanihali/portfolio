@@ -242,14 +242,14 @@ function App() {
                             ? await generateBatch(brief, (i, state) =>
                                   setMessage(`Item ${i + 1}: ${state}`),
                               )
-                            : await generate(brief);
+                            : await generate(brief, undefined, undefined, { onStatus: setMessage });
                         show(JSON.stringify(result, null, 2));
                         setMessage(
                             "Generation completed; inspect results and any retry notices.",
                         );
                     } else if (mode === "revise" && current) {
                         setMessage("AI revision in progress…");
-                        const result = await revise(current.id, value);
+                        const result = await revise(current.id, value, { onStatus: setMessage });
                         show(JSON.stringify(result, null, 2));
                         setPlan(undefined);
                         setMessage("Revised; previous approval invalidated.");
@@ -626,7 +626,7 @@ function App() {
                     {prompt === "generate"
                         ? "Brief JSON path (Enter authorizes model charges)"
                         : prompt === "revise"
-                          ? "Revision instructions (Enter authorizes model charges)"
+                          ? "Revision instructions (Enter authorizes fresh research + writing charges)"
                           : prompt === "reject"
                             ? `Type reject to completely remove ${targets().length} draft(s) everywhere`
                             : "Type publish to commit the reviewed plan"}

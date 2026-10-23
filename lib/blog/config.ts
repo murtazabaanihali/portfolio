@@ -27,7 +27,7 @@ export function origin(value: string | undefined, name: string): string {
 }
 export const siteUrl = (path = "/") => new URL(path, origin(process.env.NEXT_PUBLIC_APP_URL, "NEXT_PUBLIC_APP_URL")).href;
 export const cdnUrl = (key: string) => {
-  const base = origin(process.env.BLOG_CDN_URL, "BLOG_CDN_URL");
+  const base = origin(process.env.NEXT_PUBLIC_MEDIA_CDN_DOMAIN, "NEXT_PUBLIC_MEDIA_CDN_DOMAIN");
   if (new URL(base).hostname.endsWith(".r2.dev")) throw new Error("Use an R2 custom domain, not r2.dev");
   return new URL(key, base + "/").href;
 };

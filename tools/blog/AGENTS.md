@@ -31,7 +31,7 @@ Pass to `plan --batch file.json`; commit the saved plan. Removals must be explic
 
 Dry-run: `publish --batch file.json --dry-run` reads/validates/diffs only. It does not generate, upload, clean, or delete. Exit 3 means conflict: fetch/review/replan; do not force overwrite.
 
-Built-in generation is optional and separate: `generate brief.json --yes` incurs provider charges and transmits selected material. It never publishes. Failed covers preserve generated text and return a retry ID.
+Built-in generation is optional and separate: `generate brief.json --yes` incurs provider charges and transmits selected material. Every new article and AI revision uses a bounded tool-calling research agent before writing; legacy research:false does not bypass it. The agent generates queries, reads pages and submits a passage-backed dossier. Incomplete research stays flagged for review and cannot auto-publish. Writer output defaults to a 24,000-token ceiling, not a length target. Optional BLOG_RESEARCH_MODELS must support function tools; otherwise BLOG_TEXT_MODELS is used. Generation never publishes. Failed covers preserve generated text and return a retry ID.
 
 ## Coverage and bounded autonomy
 

@@ -9,10 +9,11 @@ import { articleInfo, parsePost, serializePost, jsonLd, manifestSchema, type Pos
 import { HEAD_KEY, GRACE_MS, siteUrl } from "../../../lib/blog/config";
 import { publishedIndex, rss } from "../../../lib/blog/discovery";
 import { research, publicFetch } from "../research";
+import { researchDeps } from "./research-fixture";
 import { fallback, localSource, generate, revise, type Brief } from "../ai";
 
 process.env.NEXT_PUBLIC_APP_URL = "https://portfolio.example.com";
-process.env.BLOG_CDN_URL = "https://content.example.com";
+process.env.NEXT_PUBLIC_MEDIA_CDN_DOMAIN = "https://content.example.com";
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY9sAAAAASUVORK5CYII=", "base64");
 const meta = (slug = "test-post", status: Post["status"] = "published"): Post => ({
   version: 1, title: "A useful technical article", slug, description: "A useful description of technical publishing decisions and their practical trade-offs.",
@@ -225,7 +226,7 @@ describe("generation/research boundaries (no paid calls)", () => {
       name, async search() { calls.push(name); throw new Error("restricted"); },
     })), 1200);
     expect(calls).toContain("one"); expect(calls).toContain("two");
-    expect(result.sources).toEqual([]); expect(result.warnings.join(" ")).toContain("Continue drafting");
+    expect(result.sources).toEqual([]); expect(result.warnings.join(" ")).toContain("hold incomplete research");
   });
   test("text/image generation is resumable and revision retains cover while invalidating approval", async () => {
     const originalFetch = globalThis.fetch;
@@ -247,7 +248,7 @@ describe("generation/research boundaries (no paid calls)", () => {
     }) as typeof fetch;
     try {
       const brief: Brief = { slug: "generated-post", brief: "Explain practical agent approval boundaries using hypothetical examples.", category: "ai-agents", tags: ["ai"], sources: [], urls: [], research: false, coverAlt: "A paper task inside a clear boundary" };
-      const first = await generate(brief, undefined, []); ids.push(first.id);
+      const first = await generate(brief, undefined, [], researchDeps()); ids.push(first.id);
       expect("partial" in first && first.partial).toBe(true);
       expect(textCalls).toBe(1); expect(imageCalls).toBe(2);
       imageWorks = true;
@@ -257,7 +258,7 @@ describe("generation/research boundaries (no paid calls)", () => {
       expect(third.id).toBe(first.id); expect(imageCalls).toBe(3);
       await approve(first.id);
       const before = await loadWorkspace(first.id);
-      await revise(first.id, "Clarify the boundaries");
+      await revise(first.id, "Clarify the boundaries", researchDeps());
       const after = await loadWorkspace(first.id);
       expect(after.meta.cover).toEqual(before.meta.cover);
       expect(after.meta.slug).toBe(before.meta.slug);

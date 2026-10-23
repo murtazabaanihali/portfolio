@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { researchDeps, dossier, pages } from "./research-fixture";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { RESEARCH_VERSION } from "../research-agent";
 import { ArticleCatalog, searchArticles, summarize, type ArticleSummary } from "../catalog";
 import { autonomousSchema, invalidInternalLinks, runAutonomous, suggestDirections, suggestionsSchema } from "../autonomous";
 import { BlogService } from "../core";
@@ -8,7 +12,7 @@ import { serializePost, type Post } from "../../../lib/blog/contract";
 import { generate as generateArticle, extractJson, type generate, type structuredCompletion } from "../ai";
 
 process.env.NEXT_PUBLIC_APP_URL = "https://portfolio.example.com";
-process.env.BLOG_CDN_URL = "https://content.example.com";
+process.env.NEXT_PUBLIC_MEDIA_CDN_DOMAIN = "https://content.example.com";
 class Memory implements Storage {
   data = new Map<string, Stored>(); gets: string[] = [];
   async get(key: string) { this.gets.push(key); return this.data.get(key) || null; }
@@ -30,7 +34,9 @@ function completion(acceptable = true): typeof structuredCompletion {
 function generator(warnings: string[] = []): typeof generate {
   return (async () => {
     const id = await createWorkspace(serializePost(post(), "## Retry deliberately\n\nUse bounded retries with backoff and an idempotency key. This is a hypothetical implementation example, not a product claim."), undefined, ".png", { warnings });
-    ids.push(id); return { id, warnings, textModel: "mock", cover: { id, reused: false, model: "mock" } };
+    ids.push(id);
+    await writeFile(join((await loadWorkspace(id)).path, "research.json"), JSON.stringify({ version: RESEARCH_VERSION, finishedAt: new Date().toISOString(), complete: true, dossier, sources: pages }));
+    return { id, warnings, textModel: "mock", cover: { id, reused: false, model: "mock" } };
   }) as typeof generate;
 }
 
@@ -191,7 +197,7 @@ describe("catalog coverage", () => {
       await expect(generateArticle(followup, undefined, existing)).rejects.toThrow("Topic likely covered");
       expect(calls).toBe(0);
       await expect(generateArticle({ ...brief, allowExistingTopic: true }, undefined, existing)).rejects.toThrow("Slug already exists");
-      const generated = await generateArticle({ ...followup, allowExistingTopic: true }, undefined, existing); ids.push(generated.id);
+      const generated = await generateArticle({ ...followup, allowExistingTopic: true }, undefined, existing, researchDeps()); ids.push(generated.id);
       expect(calls).toBe(2);
       const payload = JSON.parse(prompt);
       const content = JSON.parse(payload.messages[1].content);
@@ -228,6 +234,23 @@ describe("bounded autonomy", () => {
     const result = await runAutonomous({ directions: ["email-apis"], count: 1, mode: "publish" }, undefined, { ...deps, generate: generator(), complete: completion() });
     expect(result.results[0].status).toBe("published");
     expect((await deps.service.snapshot()).manifest.posts[0].meta.slug).toBe(brief.slug);
+  });
+  test("incomplete or stale dossiers block live publication even without state warnings", async () => {
+    for (const evidence of [
+      { version: RESEARCH_VERSION, complete: false, finishedAt: new Date().toISOString(), dossier },
+      { version: RESEARCH_VERSION, complete: true, finishedAt: "2000-01-01T00:00:00Z", dossier },
+    ]) {
+      const deps = await setup(), create = generator();
+      const generate = (async (...args: Parameters<typeof generateArticle>) => {
+        const generated = await create(...args);
+        await writeFile(join((await loadWorkspace(generated.id)).path, "research.json"), JSON.stringify(evidence));
+        return generated;
+      }) as typeof generateArticle;
+      const result = await runAutonomous({ directions: ["email-apis"], count: 1, mode: "publish" }, undefined, { ...deps, generate, complete: completion() });
+      expect(result.results[0].status).toBe("held-draft");
+      expect((await deps.service.snapshot()).manifest.posts).toEqual([]);
+      await cleanup(ids.pop()!);
+    }
   });
   test("review rejection and source warnings retain local drafts", async () => {
     for (const warnings of [[], ["Source unavailable"]]) {

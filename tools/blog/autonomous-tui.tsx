@@ -116,8 +116,8 @@ export function AutonomousWizard({ onClose }: { onClose: () => void }) {
     </>}
     {step === "confirm" && <>
       <Text>{count} posts · {selected.size} topics · {allowExistingTopic ? "topic overlap allowed" : "skip overlap"}</Text>
-      <Text color="yellow">Paid planning, writing and cover calls. {publish ? "Includes the existing publish-mode check and LIVE publication without individual approval; uncertain work stays local." : "No reviewer call, uploads or live publication."}</Text>
-      <Text>Time-sensitive topics use free best-effort web research. Sources can fail; current claims must not be invented.</Text>
+      <Text color="yellow">Paid planning, multi-turn research, writing and cover calls. {publish ? "Includes the existing publish-mode check and LIVE publication without individual approval; uncertain work stays local." : "No reviewer call, uploads or live publication."}</Text>
+      <Text>Every post uses an LLM research agent with free search. Bounded to 10 research turns, 8 queries and 12 reads; this is not a monetary cap. Incomplete evidence stays held for review.</Text>
       <Text>Skipped/failed posts may leave fewer than the requested count. Automated checks are not factual verification.</Text>
       <Text>Type {publish ? "publish" : "draft"} to authorize this batch: {confirmation}▌</Text>
     </>}

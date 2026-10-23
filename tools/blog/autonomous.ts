@@ -1,4 +1,6 @@
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { RESEARCH_VERSION, dossierSchema } from "./research-agent";
 import { z } from "zod";
 import { siteUrl } from "../../lib/blog/config";
 import { markdownTree, walk } from "../../lib/blog/contract";
@@ -127,7 +129,7 @@ export async function runAutonomous(input: AutonomousOptions, onStatus: (message
     let id: string | undefined;
     let stagedFingerprint: string | undefined;
     try {
-      const generated = await create(brief, undefined, reserved.filter(p => p.slug !== brief.slug), { requestedDirections: options.directions });
+      const generated = await create(brief, undefined, reserved.filter(p => p.slug !== brief.slug), { requestedDirections: options.directions, onStatus: message => onStatus(`${index + 1}/${options.count}: ${message}`) });
       id = generated.id;
       const w = await loadWorkspace(id);
       if (w.meta.slug !== brief.slug) throw new Error("Generated workspace does not match the planned slug");
@@ -138,9 +140,14 @@ export async function runAutonomous(input: AutonomousOptions, onStatus: (message
         continue;
       }
       if (options.mode === "draft") { results.push({ slug: brief.slug, id, status: "draft" }); continue; }
+      const evidence = JSON.parse(await readFile(join(w.path, "research.json"), "utf8"));
+      if (evidence.version !== RESEARCH_VERSION || evidence.complete !== true) throw new Error("Complete current research dossier required for autonomous publication");
+      const researchAge = Date.now() - Date.parse(evidence.finishedAt);
+      if (!Number.isFinite(researchAge) || researchAge < 0 || researchAge > 24 * 60 * 60 * 1000) throw new Error("Research dossier is missing a valid timestamp or is older than 24 hours; refresh before autonomous publication");
+      dossierSchema.parse(evidence.dossier);
       const review = await complete(
-        "Review this draft against supplied editorial facts. Reject unsupported personal/product claims, fabricated evidence, generic filler, misleading citations, or unexplained duplication of existing coverage. Return {acceptable: boolean, reasons: string[]}. This is an advisory model review, not independent fact verification.",
-        { article: w.raw, editorialContext: context, relatedCoverage: matches.slice(0, 6), brief }, reviewSchema,
+        "Review this draft against supplied editorial facts and research evidence. Check that citations actually support claims, that the angle reflects researched current facts rather than stale planning assumptions, and that marketing fits documented capabilities without invented experience. Reject unsupported personal/product claims, fabricated evidence, generic filler, misleading citations, or unexplained duplication of existing coverage. Return {acceptable: boolean, reasons: string[]}. This is an advisory model review, not independent fact verification.",
+        { article: w.raw, editorialContext: context, relatedCoverage: matches.slice(0, 6), brief, researchDossier: evidence.dossier, sourcePages: evidence.sources }, reviewSchema,
       );
       if (!review.acceptable) { results.push({ slug: brief.slug, id, status: "held-draft", reasons: review.reasons }); continue; }
       // Fresh optimistic check before planning; the existing core then enforces head ETag CAS under its lock.

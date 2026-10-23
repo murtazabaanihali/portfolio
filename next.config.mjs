@@ -3,7 +3,7 @@ import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 // Set up Cloudflare development environment bindings if available
 initOpenNextCloudflareForDev();
 
-const rawImageDomain = process.env.NEXT_PUBLIC_IMAGE_DOMAIN || "dpg6njrvwhkr5.cloudfront.net";
+const rawImageDomain = process.env.NEXT_PUBLIC_MEDIA_CDN_DOMAIN || "dpg6njrvwhkr5.cloudfront.net";
 const imageDomain = rawImageDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 
 /** @type {import('next').NextConfig} */

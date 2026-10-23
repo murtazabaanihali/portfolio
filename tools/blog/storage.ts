@@ -15,12 +15,12 @@ export class R2Storage implements Storage {
   private bucket: string;
   constructor() {
     const required = (key: string) => { const v = process.env[key]; if (!v) throw new Error(`Missing ${key}`); return v; };
-    const account = required("BLOG_R2_ACCOUNT_ID");
-    if (!/^[a-f0-9]{32}$/.test(account)) throw new Error("Invalid BLOG_R2_ACCOUNT_ID");
-    this.bucket = required("BLOG_R2_BUCKET");
+    const account = required("CLOUDFLARE_R2_ACCOUNT_ID");
+    if (!/^[a-f0-9]{32}$/.test(account)) throw new Error("Invalid CLOUDFLARE_R2_ACCOUNT_ID");
+    this.bucket = required("CLOUDFLARE_R2_BUCKET");
     this.client = new S3Client({
       region: "auto", endpoint: `https://${account}.r2.cloudflarestorage.com`,
-      credentials: { accessKeyId: required("BLOG_R2_ACCESS_KEY_ID"), secretAccessKey: required("BLOG_R2_SECRET_ACCESS_KEY") },
+      credentials: { accessKeyId: required("CLOUDFLARE_R2_ACCESS_KEY_ID"), secretAccessKey: required("CLOUDFLARE_R2_SECRET_ACCESS_KEY") },
       maxAttempts: 3, requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED",
     });
   }

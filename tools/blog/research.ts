@@ -62,7 +62,7 @@ export async function publicFetch(input: string, signal: AbortSignal): Promise<R
   throw new Error("Too many source redirects");
 }
 const decode = (s: string) => s.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-export const readable = (s: string) => decode(s.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")).trim();
+export const readable = (s: string) => decode(s.replace(/<(script|style|nav|footer|header)[^>]*>[\s\S]*?<\/\1>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")).trim();
 async function boundedText(response: Response, max = 1_000_000) {
   if (!response.body) return "";
   const reader = response.body.getReader(); let total = 0; const chunks: Uint8Array[] = [];
@@ -101,8 +101,8 @@ export const freeProviders: SearchProvider[] = [
     })).filter(r => r.url.startsWith("https://"));
   } },
 ];
-export async function research(query: string, providers = freeProviders, timeout = Number(process.env.BLOG_RESEARCH_TIMEOUT_MS || 25000)): Promise<ResearchResult> {
-  const warnings: string[] = [], deadline = Date.now() + Math.max(1000, Math.min(timeout, 60000));
+export async function research(query: string, providers = freeProviders, timeout = Number(process.env.BLOG_RESEARCH_TIMEOUT_MS || 25000), fetchPages = true): Promise<ResearchResult> {
+  const warnings: string[] = [], deadline = Date.now() + Math.max(1000, Math.min(Number.isFinite(timeout) ? timeout : 25000, 60000));
   // Each backend gets part of the total deadline, leaving room for an independent fallback.
   for (let i = 0; i < providers.length && Date.now() < deadline; i++) {
     const provider = providers[i], providerDeadline = Date.now() + Math.floor((deadline - Date.now()) / (providers.length - i));
@@ -111,12 +111,11 @@ export async function research(query: string, providers = freeProviders, timeout
         const signal = AbortSignal.timeout(Math.max(1, Math.min(4000, providerDeadline - Date.now())));
         const results = await withSignal(provider.search(query, signal), signal);
         if (!results.length) throw new Error("No usable results (possibly restricted or challenged)");
-        const sources: ResearchResult["sources"] = [];
-        for (const result of results.slice(0, 3)) {
-          if (Date.now() >= deadline) break;
-          try { sources.push(await suppliedSource(result.url, AbortSignal.timeout(Math.max(1, Math.min(3000, deadline - Date.now()))))); }
-          catch { sources.push({ ...result, kind: "search-result" }); warnings.push(`Could not read ${result.url}; search snippet is not verification.`); }
-        }
+        if (!fetchPages) return { sources: results.slice(0, 5).map(s => ({ ...s, kind: "search-result" as const })), warnings, provider: provider.name };
+        const sources = await Promise.all(results.slice(0, 3).map(async result => {
+          try { return await suppliedSource(result.url, AbortSignal.timeout(Math.max(1, Math.min(3000, deadline - Date.now())))); }
+          catch { warnings.push(`Could not read ${result.url}; search snippet is not verification.`); return { ...result, kind: "search-result" as const }; }
+        }));
         return { sources, warnings, provider: provider.name };
       } catch (e) {
         warnings.push(`${provider.name} attempt ${attempt + 1}: ${String(e)}`);
@@ -125,6 +124,11 @@ export async function research(query: string, providers = freeProviders, timeout
       }
     }
   }
-  warnings.push("Free research unavailable. Continue drafting; omit or qualify unverified latest-model, availability, price, and benchmark claims.");
+  warnings.push("Free search unavailable. Try another query/source; omit unverified claims and hold incomplete research for review.");
   return { sources: [], warnings };
+}
+
+/** Discovery only: the research agent decides which pages to read and what to search next. */
+export function searchSources(query: string) {
+  return research(query, freeProviders, Number(process.env.BLOG_RESEARCH_TIMEOUT_MS || 25000), false);
 }

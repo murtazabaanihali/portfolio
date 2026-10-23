@@ -2,6 +2,8 @@
   "slug": "practical-agent-boundaries",
   "brief": "Write a conversational blog post about giving an AI coding agent useful freedom without handing it the keys to everything. Develop a clear take with a concrete hypothetical example of a tool permission going too far and how revision-bound approval helps. Explain the choices in prose, not a permission questionnaire or a checklist. Do not invent personal experience or test results.",
   "postType": "guide",
+  "writerPersona": "Agent-safety editorial lens: explain permission boundaries and failure modes without claiming personal testing.",
+  "primaryKeyword": "AI coding agent permissions",
   "category": "ai-agents",
   "tags": [
     "ai-agents",
@@ -9,6 +11,6 @@
   ],
   "sources": [],
   "urls": [],
-  "research": false,
+  "research": true,
   "coverAlt": "A small paper task card inside a clearly marked boundary"
 }

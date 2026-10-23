@@ -29,12 +29,12 @@ lock-status                        Inspect a stranded publishing lock
 unlock <owner> --yes --no-active-writers  Manual recovery ONLY after stopping all writers
 clean <id> --yes                    Explicitly discard owned local work
 reject <id...> --yes                Completely remove drafts everywhere (local, DB, remote)
-generate <brief.json> --yes [--allow-existing-topic]  Paid text + cover; array supports batches
+generate <brief.json> --yes [--allow-existing-topic]  Paid research agent + text + cover; arrays supported
 autonomous <batch.json> --yes       Bounded batch; mode draft or publish (live requires --auto-publish)
 suggest --yes                      Paid LLM topic directions from DB/local coverage and context
 related <query>                    Cached metadata search of DB and local coverage
 cover <id> --yes [--regenerate]     Retry/reuse cover (regenerate only explicitly)
-revise <id> --instructions "..." --yes
+revise <id> --instructions "..." --yes  Fresh research agent + rewrite; may incur charges
 tui                                Keyboard review, diff, approval, editor, generation
 
 All results are JSON. Plans contain text/frontmatter diffs and cover hashes.
