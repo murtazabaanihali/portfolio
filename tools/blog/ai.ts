@@ -32,20 +32,6 @@ import {
   blogRevisionTask,
   needsCurrentSources,
 } from "./prompts";
-import {
-  MODEL_CATALOG,
-  PROVIDERS,
-  TASK_CHAINS,
-  isRateLimitError,
-  rotationManager,
-  resolveProviderCredentials,
-  hasAnyProviderKey,
-  determineWritingComplexity,
-  getModelsForTask,
-  type TaskLevel,
-  type ProviderId,
-  type ModelConfig,
-} from "./models.config";
 
 /** Schema for an article generation brief. */
 export const briefSchema = z
@@ -79,120 +65,35 @@ export const briefSchema = z
 
 export type Brief = z.input<typeof briefSchema>;
 
-/** Read and validate a comma-separated list of 1–5 model identifiers from an env var, or centralized defaults. */
-export const models = (key: string): string[] => {
-  const envVal = process.env[key]?.trim();
-  if (envVal) {
-    const list = envVal
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (!list.length || list.length > 5) {
-      throw new Error(`Set 1–5 ordered models in ${key}`);
-    }
-    return list;
+/** Read and validate a comma-separated list of 1–5 model identifiers from an env var. */
+const models = (key: string): string[] => {
+  const list = (process.env[key] || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!list.length || list.length > 5) {
+    throw new Error(`Set 1–5 ordered models in ${key}`);
   }
-
-  // Centralized task defaults when env overrides are omitted
-  if (key === "BLOG_IMAGE_MODELS") {
-    return getModelsForTask("image");
-  }
-  if (key === "BLOG_RESEARCH_MODELS") {
-    return getModelsForTask("research");
-  }
-  return getModelsForTask("standard");
+  return list;
 };
 
 /** Load and validate API configuration for AI requests. */
-export function config(preferredModelId?: string) {
-  if (preferredModelId) {
-    return configForModel(preferredModelId);
+function config() {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing OPENROUTER_API_KEY; generation may incur charges");
   }
-
-  // Check if OPENROUTER_API_KEY or explicit custom baseURL is present
-  if (process.env.OPENROUTER_API_KEY?.trim()) {
-    const apiKey = process.env.OPENROUTER_API_KEY.trim();
-    const baseURL =
-      process.env.BLOG_AI_BASE_URL || "https://openrouter.ai/api/v1";
-    if (new URL(baseURL).protocol !== "https:") {
-      throw new Error("AI endpoint must use HTTPS");
-    }
-    return { apiKey, baseURL };
+  const baseURL =
+    process.env.BLOG_AI_BASE_URL || "https://openrouter.ai/api/v1";
+  if (new URL(baseURL).protocol !== "https:") {
+    throw new Error("AI endpoint must use HTTPS");
   }
-
-  // Check provider-specific keys (Google, Mistral, Groq, Z.AI)
-  for (const provId of ["google", "mistral", "groq", "zai"] as const) {
-    const creds = resolveProviderCredentials(provId);
-    if (creds.apiKey) {
-      if (new URL(creds.baseURL).protocol !== "https:") {
-        throw new Error("AI endpoint must use HTTPS");
-      }
-      return { apiKey: creds.apiKey, baseURL: creds.baseURL };
-    }
-  }
-
-  throw new Error(
-    "Missing AI API key. Set one of GEMINI_API_KEY, MISTRAL_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY, or ZAI_API_KEY in .env",
-  );
-}
-
-/** Resolve specific provider credentials and base URL for a given model identifier. */
-export function configForModel(modelId: string) {
-  const modelDef = MODEL_CATALOG[modelId];
-  if (modelDef) {
-    const creds = resolveProviderCredentials(modelDef.provider);
-    if (!creds.apiKey) {
-      if (process.env.OPENROUTER_API_KEY?.trim()) {
-        return {
-          apiKey: process.env.OPENROUTER_API_KEY.trim(),
-          baseURL:
-            process.env.BLOG_AI_BASE_URL || "https://openrouter.ai/api/v1",
-          provider: modelDef.provider,
-          modelDef,
-        };
-      }
-      throw new Error(
-        `Missing API key for ${modelDef.name} (${modelDef.provider}). Set one of: ${PROVIDERS[modelDef.provider].envKeyNames.join(", ")} in .env`,
-      );
-    }
-    if (new URL(creds.baseURL).protocol !== "https:") {
-      throw new Error("AI endpoint must use HTTPS");
-    }
-    return {
-      apiKey: creds.apiKey,
-      baseURL: creds.baseURL,
-      provider: modelDef.provider,
-      modelDef,
-    };
-  }
-
-  // Custom or test model ID - fallback to generic config()
-  const generic = config();
-  return {
-    apiKey: generic.apiKey,
-    baseURL: generic.baseURL,
-    provider: "openrouter" as ProviderId,
-    modelDef: undefined,
-  };
-}
-
-/** Create an OpenAI SDK client targeting the specific provider for a model. */
-export function getClientForModel(modelId: string, timeout = 90_000) {
-  const conf = configForModel(modelId);
-  const client = new OpenAI({
-    apiKey: conf.apiKey,
-    baseURL: conf.baseURL,
-    maxRetries: 0,
-    timeout,
-  });
-  return { client, conf };
+  return { apiKey, baseURL };
 }
 
 /**
  * Execute a task against an ordered list of models with fallback and retries.
  * Tries each model up to 2 times before falling back to the next model.
- * If a rate limit (HTTP 429) is encountered, the model is recorded in cooldown
- * and rotated immediately to avoid burning time on known exhausted limits.
  */
 export async function fallback<T>(
   list: string[],
@@ -207,12 +108,6 @@ export async function fallback<T>(
         errors.push(
           `${model} attempt ${attempt + 1}: ${e instanceof Error ? e.message : String(e)}`,
         );
-        if (isRateLimitError(e)) {
-          const modelDef = MODEL_CATALOG[model];
-          rotationManager.recordRateLimit(model, modelDef?.provider);
-          // On rate limits, immediately rotate to next model in the fallback chain
-          break;
-        }
         if (attempt === 0) {
           await new Promise((r) => setTimeout(r, 500));
         }
@@ -273,24 +168,22 @@ export function writingTokenLimit(): number {
 
 /** Provider retries share one bounded allowance; never replay successful research tools. */
 function researchTurn(): ResearchTurn {
+  const client = new OpenAI({ ...config(), maxRetries: 0, timeout: 90_000 });
   let attempts = 0;
 
   return async (messages) => {
-    const candidateModels = process.env.BLOG_RESEARCH_MODELS?.trim()
-      ? models("BLOG_RESEARCH_MODELS")
-      : process.env.BLOG_TEXT_MODELS?.trim()
-        ? models("BLOG_TEXT_MODELS")
-        : getModelsForTask("research");
-
     const completed = await fallback(
-      candidateModels,
+      models(
+        process.env.BLOG_RESEARCH_MODELS?.trim()
+          ? "BLOG_RESEARCH_MODELS"
+          : "BLOG_TEXT_MODELS",
+      ),
       async (model) => {
         if (attempts >= 14) {
           throw new Error("Research provider-call budget exhausted");
         }
         attempts++;
 
-        const { client } = getClientForModel(model, 90_000);
         const response = await client.chat.completions.create({
           model,
           messages,
@@ -315,23 +208,16 @@ function researchTurn(): ResearchTurn {
 }
 
 /** Execute a full post writing completion using configured text models and prompts. */
-async function textCompletion(prompt: string, taskLevel: TaskLevel = "standard") {
+async function textCompletion(prompt: string) {
   const maxTokens = writingTokenLimit();
-  const candidateModels = process.env.BLOG_TEXT_MODELS?.trim()
-    ? models("BLOG_TEXT_MODELS")
-    : getModelsForTask(taskLevel);
+  const client = new OpenAI({ ...config(), maxRetries: 0, timeout: 300_000 });
 
   const completed = await fallback(
-    candidateModels,
+    models("BLOG_TEXT_MODELS"),
     async (model) => {
-      const { client, conf } = getClientForModel(model, 300_000);
-      const effectiveMaxTokens = conf.modelDef?.maxOutputTokens
-        ? Math.min(maxTokens, conf.modelDef.maxOutputTokens)
-        : maxTokens;
-
       const response = await client.chat.completions.create({
         model,
-        max_tokens: effectiveMaxTokens,
+        max_tokens: maxTokens,
         messages: [
           { role: "system", content: blogWriterSystem },
           { role: "user", content: prompt },
@@ -414,14 +300,9 @@ export async function structuredCompletion<T>(
   instruction: string,
   input: unknown,
   schema: z.ZodType<T>,
-  taskLevel: TaskLevel = "lightweight",
 ): Promise<T> {
-  const candidateModels = process.env.BLOG_TEXT_MODELS?.trim()
-    ? models("BLOG_TEXT_MODELS")
-    : getModelsForTask(taskLevel);
-
-  const result = await fallback(candidateModels, async (model) => {
-    const { client } = getClientForModel(model, 90_000);
+  const client = new OpenAI({ ...config(), maxRetries: 0, timeout: 90_000 });
+  const result = await fallback(models("BLOG_TEXT_MODELS"), async (model) => {
     const response = await client.chat.completions.create({
       model,
       max_tokens: 6000,
@@ -457,14 +338,10 @@ export async function generateCover(id: string, regenerate = false) {
     return { id, reused: true, model: w.state.imageModel };
   }
 
-  const candidateModels = process.env.BLOG_IMAGE_MODELS?.trim()
-    ? models("BLOG_IMAGE_MODELS")
-    : getModelsForTask("image");
-
+  const { apiKey, baseURL } = config();
   const generated = await fallback(
-    candidateModels,
+    models("BLOG_IMAGE_MODELS"),
     async (model) => {
-      const { apiKey, baseURL } = configForModel(model);
       const cleanBase = baseURL.replace(/\/$/, "");
       const endpoints =
         cleanBase.endsWith("/images") ||
@@ -713,14 +590,6 @@ export async function generate(
   const sources = findings.sources;
   warnings.push(...findings.warnings);
 
-  const complexity = determineWritingComplexity({
-    brief: brief.brief,
-    sourcesCount: brief.sources.length,
-    urlsCount: brief.urls.length,
-    postType: brief.postType,
-    dossierFindingsCount: findings.dossier?.findings.length,
-  });
-
   const result = await textCompletion(
     JSON.stringify({
       task: blogWritingTask,
@@ -749,7 +618,6 @@ export async function generate(
       untrustedSelectedSources: { local, sources },
       nonBlockingWarnings: warnings,
     }),
-    complexity,
   );
 
   const parsed = parsePost(result.result, true);
