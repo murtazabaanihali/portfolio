@@ -1,0 +1,42 @@
+{
+  "promptVersion": "blog-post-v3-agent",
+  "currentDate": "2026-10-30",
+  "brief": {
+    "slug": "open-source-closed-model-gap-2026",
+    "brief": "Examine whether open-weight models have genuinely closed the capability gap with leading closed models as of late 2026. Target reader: developers and product builders deciding which model tier to adopt for production features. Central point: benchmark leaderboards show convergence on specific tasks (coding, reasoning, instruction following) but persistent gaps remain in long-context reliability, tool use consistency, and safety alignment — differences that matter for product decisions. Useful concrete examples: compare recent releases such as Llama 3.1/3.2 family, Qwen 2.5, Nemotron 3 Ultra, and Mistral Large 2 against GPT-4o, Claude 3.5 Sonnet, and Gemini 1.5 Pro on public benchmarks (MMLU-Pro, LiveCodeBench, SWE-bench Verified, BFCL, HumanEval+) and note where evaluation methodology (prompt style, few-shot, agent scaffolding) changes rankings. Claims needing sources: current benchmark scores with dates, license terms for commercial use, context window and token pricing for API-served open models, and any independent replication of vendor-reported numbers.",
+    "category": "ai-news",
+    "tags": [
+      "open-source-llm",
+      "model-comparison",
+      "benchmarks",
+      "llm-selection"
+    ],
+    "sources": [],
+    "urls": [],
+    "postType": "explainer",
+    "research": true,
+    "researchQuery": "2026 open weight vs closed LLM benchmarks MMLU-Pro LiveCodeBench SWE-bench Verified BFCL Llama 3.1 Qwen 2.5 Nemotron 3 Ultra Mistral Large 2 GPT-4o Claude 3.5 Sonnet Gemini 1.5 Pro commercial license context window pricing",
+    "writerPersona": "Senior AI engineer evaluating model choices for production systems",
+    "primaryKeyword": "open source vs closed LLM comparison 2026",
+    "coverAlt": "Side-by-side abstract visualization of two model silhouettes converging, labeled open and closed, with benchmark chart lines in background",
+    "allowExistingTopic": true
+  },
+  "requestedDirections": [
+    {
+      "id": "custom-topic",
+      "label": "Open source models are very close to closed ones, the gap is rapidaly closing. Comparisons with dif…",
+      "detail": "Open source models are very close to closed ones, the gap is rapidaly closing. Comparisons with diff mdoels."
+    }
+  ],
+  "researchQueries": [
+    "Llama 3.1 benchmark MMLU-Pro LiveCodeBench SWE-bench Verified 2026"
+  ],
+  "researchComplete": false,
+  "researchModels": [
+    "cohere/north-mini-code:free"
+  ],
+  "writerPersona": "Senior AI engineer evaluating model choices for production systems",
+  "primaryKeyword": "open source vs closed LLM comparison 2026",
+  "requestedTextModel": "openrouter/free",
+  "textModel": "nvidia/nemotron-3-ultra-550b-a55b:free"
+}
