@@ -9,7 +9,7 @@ export const getImageFullURL = (url?: string, fallback?: string) => {
     if (!url) return fallback || "/placeholder.svg";
     if (url?.startsWith?.("https://")) return url;
 
-    const imgDomain = process.env.NEXT_PUBLIC_IMAGE_DOMAIN;
+    const imgDomain = process.env.NEXT_PUBLIC_MEDIA_CDN_DOMAIN;
     if (!imgDomain) {
         console.error("Cannot load actual image");
         return fallback || "/placeholder.svg";

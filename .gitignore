@@ -32,3 +32,8 @@ cloudflare-env.d.ts
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local editorial context and disposable blog workspaces
+/tools/blog/blog-context.md
+/tools/blog/.work/
+/.pi/

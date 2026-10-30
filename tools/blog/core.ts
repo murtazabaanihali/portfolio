@@ -1,0 +1,816 @@
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { createTwoFilesPatch } from "diff";
+import { z } from "zod";
+import {
+  HEAD_KEY,
+  OBJECT_PREFIX,
+  GRACE_MS,
+  cdnUrl,
+} from "../../lib/blog/config";
+import {
+  headSchema,
+  inventorySchema,
+  manifestSchema,
+  parsePost,
+  serializePost,
+  slugSchema,
+  objectKey,
+  type Entry,
+  type Head,
+  type Inventory,
+  type Manifest,
+} from "../../lib/blog/contract";
+import { bytes, text, Conflict, R2Storage, type Storage } from "./storage";
+import {
+  loadWorkspace,
+  cleanup,
+  createWorkspace,
+  hash,
+  workspacePath,
+} from "./workspace";
+
+const LOCK_KEY = "blog/publishing.lock";
+
+/** Schema for individual publishing batch actions. */
+export const actionSchema = z.discriminatedUnion("type", [
+  z
+    .object({ type: z.literal("upsert"), workspace: z.string().uuid() })
+    .strict(),
+  z
+    .object({ type: z.enum(["unpublish", "delete"]), slug: slugSchema })
+    .strict(),
+]);
+
+/** Schema for a publishing batch request (1 to 100 actions). */
+export const batchSchema = z
+  .object({
+    version: z.literal(1),
+    actions: z.array(actionSchema).min(1).max(100),
+  })
+  .strict();
+
+export type Action = z.infer<typeof actionSchema>;
+
+/** Individual planned modification to a post. */
+export type Change = {
+  action: Action;
+  slug: string;
+  kind: "new" | "update" | "unpublish" | "delete";
+  fingerprint?: string;
+  diff: string;
+  cover: { before?: string; after?: string };
+};
+
+/** Published batch plan with verification token and baseline ETag. */
+export type Plan = {
+  version: 1;
+  baseline: string | null;
+  changes: Change[];
+  token: string;
+};
+
+type Snapshot = {
+  head: Head | null;
+  etag: string | null;
+  inventory: Inventory;
+  manifest: Manifest;
+};
+
+/** Gather all storage keys actively referenced by a head and its inventory. */
+function references(head: Head | null, inventory: Inventory): Set<string> {
+  const refs = new Set<string>(head ? [head.inventory, head.manifest] : []);
+  for (const entry of inventory.posts) {
+    refs.add(entry.key);
+    for (const asset of entry.assets) {
+      refs.add(asset);
+    }
+  }
+  return refs;
+}
+
+/**
+ * Extract all managed CDN asset storage keys from cover source and post Markdown.
+ * Scans Markdown content so reference-style images keep managed assets alive during GC.
+ */
+function assetKeys(raw: string, cover: string): string[] {
+  const found = new Set<string>();
+  if (objectKey.safeParse(cover).success) {
+    found.add(cover);
+  }
+
+  const base = cdnUrl("");
+  for (const match of raw.matchAll(/https:\/\/[^\s<>"')]+/g)) {
+    if (match[0].startsWith(base)) {
+      const key = decodeURIComponent(new URL(match[0]).pathname.slice(1));
+      if (objectKey.safeParse(key).success) {
+        found.add(key);
+      }
+    }
+  }
+  return [...found].sort();
+}
+
+/**
+ * Service managing blog storage snapshots, publishing plans, atomic commits,
+ * editorial state locks, and garbage collection.
+ */
+export class BlogService {
+  private lockWarnings: string[] = [];
+
+  constructor(readonly storage: Storage) {}
+
+  /**
+   * Fetch the current remote head, inventory, and manifest.
+   * Throws if head is missing unless `allowMissing` is true.
+   */
+  async snapshot(allowMissing = false): Promise<Snapshot> {
+    const stored = await this.storage.get(HEAD_KEY);
+    if (!stored && !allowMissing) {
+      throw new Error(
+        "Active head missing. Initialize a new bucket explicitly; investigate missing state on an existing bucket.",
+      );
+    }
+    if (!stored) {
+      return {
+        head: null,
+        etag: null,
+        inventory: { version: 1, posts: [], retired: [] },
+        manifest: { version: 1, posts: [] },
+      };
+    }
+
+    const head = headSchema.parse(JSON.parse(text(stored)));
+    const [invStored, manStored] = await Promise.all([
+      this.storage.get(head.inventory),
+      this.storage.get(head.manifest),
+    ]);
+
+    if (!invStored || !manStored) {
+      throw new Error(
+        "Remote head references missing objects; refusing to overwrite",
+      );
+    }
+
+    const inventory = inventorySchema.parse(JSON.parse(text(invStored)));
+    const manifest = manifestSchema.parse(JSON.parse(text(manStored)));
+
+    const expected = inventory.posts.filter(
+      (p) => p.meta.status === "published",
+    );
+    if (
+      JSON.stringify(expected) !== JSON.stringify(manifest.posts) ||
+      new Set(inventory.posts.map((p) => p.meta.slug)).size !==
+        inventory.posts.length
+    ) {
+      throw new Error("Remote inventory/manifest inconsistency");
+    }
+
+    return { head, etag: stored.etag, inventory, manifest };
+  }
+
+  /**
+   * Compute a read-only publication plan and unified diffs against remote baseline.
+   * Validates date rules, covers, and collision constraints.
+   */
+  async plan(input: Action[]): Promise<Plan> {
+    const actions = batchSchema.parse({ version: 1, actions: input }).actions;
+    const snapshot = await this.snapshot();
+    const changes: Change[] = [];
+    const slugs = new Set<string>();
+
+    for (const action of actions) {
+      const w =
+        action.type === "upsert"
+          ? await loadWorkspace(action.workspace)
+          : undefined;
+      const slug = w ? w.meta.slug : (action as { slug: string }).slug;
+
+      if (slugs.has(slug)) {
+        throw new Error("A batch cannot target the same slug twice");
+      }
+      slugs.add(slug);
+
+      const before = snapshot.inventory.posts.find((p) => p.meta.slug === slug);
+      if (!w && !before) {
+        throw new Error(`No remote post: ${slug}`);
+      }
+
+      if (w && before) {
+        if (
+          w.state.baselineRevision &&
+          w.state.baselineRevision !== before.revision
+        ) {
+          throw new Conflict(`${slug} changed remotely since it was fetched`);
+        }
+        if (
+          before.meta.publishedAt &&
+          w.meta.publishedAt !== before.meta.publishedAt
+        ) {
+          throw new Error("Original publishedAt must remain unchanged");
+        }
+      }
+
+      if (w && w.meta.cover.src.includes("example.invalid")) {
+        throw new Error(
+          "Generate or import a real cover before uploading this draft/post",
+        );
+      }
+
+      if (w?.meta.status === "published") {
+        if (
+          Date.parse(w.meta.publishedAt!) > Date.now() ||
+          Date.parse(w.meta.updatedAt!) > Date.now()
+        ) {
+          throw new Error("Future publication is not supported; use draft");
+        }
+        if (
+          before &&
+          w.meta.updatedAt &&
+          before.meta.updatedAt &&
+          Date.parse(w.meta.updatedAt) < Date.parse(before.meta.updatedAt)
+        ) {
+          throw new Error("updatedAt cannot move backwards");
+        }
+      }
+
+      let previous = "";
+      if (before) {
+        const object = await this.storage.get(before.key);
+        if (!object) {
+          throw new Error("Remote article missing");
+        }
+        previous = text(object);
+      }
+
+      const after =
+        w?.raw ||
+        (action.type === "unpublish"
+          ? serializePost(
+              { ...before!.meta, status: "draft" },
+              parsePost(previous).body,
+            )
+          : "");
+
+      if (
+        w &&
+        before?.meta.status === "published" &&
+        w.meta.status === "published" &&
+        previous !== w.raw &&
+        w.meta.updatedAt === before.meta.updatedAt
+      ) {
+        throw new Error(
+          "Published corrections require a new updatedAt (publishedAt stays unchanged)",
+        );
+      }
+
+      const kind: Change["kind"] =
+        action.type === "delete"
+          ? "delete"
+          : action.type === "unpublish" ||
+              (before?.meta.status === "published" &&
+                w?.meta.status === "draft")
+            ? "unpublish"
+            : before
+              ? "update"
+              : "new";
+
+      const coverAfter = w
+        ? w.meta.cover.src + (w.cover ? " (sha256 " + hash(w.cover) + ")" : "")
+        : action.type === "delete"
+          ? undefined
+          : before?.meta.cover.src;
+
+      changes.push({
+        action,
+        slug,
+        kind,
+        fingerprint: w?.fingerprint,
+        diff: createTwoFilesPatch(
+          slug + "/before.md",
+          slug + "/after.md",
+          previous,
+          after,
+        ),
+        cover: {
+          before: before?.meta.cover.src,
+          after: coverAfter,
+        },
+      });
+    }
+
+    const content = { version: 1 as const, baseline: snapshot.etag, changes };
+    return { ...content, token: hash(JSON.stringify(content)) };
+  }
+
+  /**
+   * Acquire exclusive publishing lock in storage, execute callback,
+   * and ensure the lock is held throughout the operation.
+   */
+  private async locked<T>(
+    fn: (assertHeld: () => Promise<void>) => Promise<T>,
+  ): Promise<T> {
+    const owner = randomUUID();
+    await this.storage.put(
+      LOCK_KEY,
+      bytes(JSON.stringify({ owner, startedAt: new Date().toISOString() })),
+      "application/json",
+      { absent: true },
+    );
+
+    const assertHeld = async () => {
+      const lock = await this.storage.get(LOCK_KEY);
+      if (!lock || JSON.parse(text(lock)).owner !== owner) {
+        throw new Conflict("Publishing lock ownership lost; refusing mutation");
+      }
+    };
+
+    try {
+      return await fn(assertHeld);
+    } finally {
+      try {
+        await assertHeld();
+        await this.storage.remove(LOCK_KEY);
+      } catch (error) {
+        const warning =
+          "Lock release failed; inspect lock-status before another mutation: " +
+          String(error);
+        this.lockWarnings.push(warning);
+        console.error(JSON.stringify({ warning }));
+      }
+    }
+  }
+
+  /** Inspect the current publishing lock in storage. */
+  async lockStatus(): Promise<{ owner: string; startedAt: string } | null> {
+    const lock = await this.storage.get(LOCK_KEY);
+    return lock
+      ? (JSON.parse(text(lock)) as { owner: string; startedAt: string })
+      : null;
+  }
+
+  /** Manually unlock a stranded publishing lock after stopping all active writers. */
+  async recoverLock(owner: string): Promise<{ unlocked: string }> {
+    const lock = await this.lockStatus();
+    if (!lock || lock.owner !== owner) {
+      throw new Conflict("Lock owner differs; inspect lock-status again");
+    }
+    // Operator must stop ALL writers/recovery commands first. Never auto-expire a lock.
+    await this.storage.remove(LOCK_KEY);
+    return { unlocked: owner };
+  }
+
+  /** Write an object to storage and verify its SHA-256 hash immediately. */
+  private async verifiedPut(
+    key: string,
+    data: Uint8Array,
+    type: string,
+  ): Promise<void> {
+    await this.storage.put(key, data, type, { absent: true });
+    const check = await this.storage.get(key);
+    if (!check || hash(check.bytes) !== hash(data)) {
+      throw new Error(`Upload verification failed: ${key}`);
+    }
+  }
+
+  /**
+   * Commit a planned batch of actions under exclusive storage lock.
+   * Performs CAS update of HEAD_KEY and mirrors changes to PostgreSQL if configured.
+   */
+  async commit(plan: Plan, authorize = false) {
+    if (!authorize && plan.changes.some((c) => c.action.type !== "upsert")) {
+      throw new Error(
+        "Explicit authorization required for remote unpublish/delete actions",
+      );
+    }
+
+    // Re-plan before lock and again inside it. Never trust caller-supplied diffs/fingerprints.
+    const current = await this.plan(plan.changes.map((c) => c.action));
+    if (current.token !== plan.token) {
+      throw new Conflict("Plan or local content changed; inspect a fresh diff");
+    }
+
+    const committed = await this.locked(async (assertHeld) => {
+      const again = await this.plan(plan.changes.map((c) => c.action));
+      if (again.token !== plan.token) {
+        throw new Conflict(
+          "Remote or local state changed while acquiring lock",
+        );
+      }
+
+      const baseline = await this.snapshot();
+      const commit = randomUUID();
+      const prefix = OBJECT_PREFIX + commit + "/";
+      const posts = [...baseline.inventory.posts];
+      const owned: { id: string; fingerprint: string }[] = [];
+      const mutations: {
+        type: "upsert" | "unpublish" | "delete";
+        slug: string;
+        entry?: Entry;
+      }[] = [];
+
+      for (const change of plan.changes) {
+        const previous = posts.find((e) => e.meta.slug === change.slug);
+        let next: Entry | undefined;
+
+        if (change.action.type === "upsert") {
+          const w = await loadWorkspace(change.action.workspace);
+          if (w.fingerprint !== change.fingerprint) {
+            throw new Conflict("Local content changed during publication");
+          }
+          if (!authorize && w.state.approval !== w.fingerprint) {
+            throw new Error(`Approval required for exact revision: ${w.id}`);
+          }
+
+          const meta = { ...w.meta, cover: { ...w.meta.cover } };
+          if (w.cover) {
+            const { imageType } = await import("./workspace");
+            const type = imageType(w.cover);
+            const ext = type === "image/jpeg" ? "jpg" : type.split("/")[1];
+            meta.cover.src = prefix + change.slug + "-cover." + ext;
+            await this.verifiedPut(meta.cover.src, w.cover, type);
+          }
+
+          const raw = serializePost(meta, w.body);
+          const key = prefix + change.slug + ".md";
+          parsePost(raw);
+
+          const assets = assetKeys(raw, meta.cover.src);
+          for (const asset of assets) {
+            if (!(await this.storage.get(asset))) {
+              throw new Error(`Referenced asset missing: ${asset}`);
+            }
+          }
+
+          await this.verifiedPut(
+            key,
+            bytes(raw),
+            "text/markdown; charset=utf-8",
+          );
+          next = { meta, key, revision: hash(raw), assets };
+          owned.push({ id: w.id, fingerprint: w.fingerprint });
+          mutations.push({ type: "upsert", slug: change.slug, entry: next });
+        } else if (change.action.type === "unpublish") {
+          const prior = await this.storage.get(previous!.key);
+          if (!prior) {
+            throw new Error("Article disappeared");
+          }
+          const meta = { ...previous!.meta, status: "draft" as const };
+          const raw = serializePost(meta, parsePost(text(prior)).body);
+          const key = prefix + change.slug + ".md";
+          await this.verifiedPut(
+            key,
+            bytes(raw),
+            "text/markdown; charset=utf-8",
+          );
+          next = { ...previous!, meta, key, revision: hash(raw) };
+          mutations.push({
+            type: "unpublish",
+            slug: change.slug,
+            entry: next,
+          });
+        } else if (change.action.type === "delete") {
+          mutations.push({ type: "delete", slug: change.slug });
+        }
+
+        const index = posts.findIndex((e) => e.meta.slug === change.slug);
+        if (index >= 0) {
+          posts.splice(index, 1);
+        }
+        if (next) {
+          posts.push(next);
+        }
+      }
+
+      posts.sort((a, b) => a.meta.slug.localeCompare(b.meta.slug));
+      const head: Head = {
+        version: 1,
+        commit,
+        manifest: prefix + "manifest.json",
+        inventory: prefix + "inventory.json",
+      };
+
+      const now = new Date().toISOString();
+      const currentRefs = references(head, { version: 1, posts, retired: [] });
+      const retired = new Map(
+        baseline.inventory.retired.map((r) => [r.key, r]),
+      );
+
+      for (const key of references(baseline.head, baseline.inventory)) {
+        if (!currentRefs.has(key)) {
+          retired.set(key, { key, at: now });
+        }
+      }
+      for (const key of currentRefs) {
+        retired.delete(key);
+      }
+
+      const inventory = inventorySchema.parse({
+        version: 1,
+        posts,
+        retired: [...retired.values()],
+      });
+      const manifest = manifestSchema.parse({
+        version: 1,
+        posts: posts.filter((p) => p.meta.status === "published"),
+      });
+
+      await this.verifiedPut(
+        head.inventory,
+        bytes(JSON.stringify(inventory)),
+        "application/json",
+      );
+      await this.verifiedPut(
+        head.manifest,
+        bytes(JSON.stringify(manifest)),
+        "application/json",
+      );
+
+      // Catch local edits that occurred during uploads, before any visible commit.
+      for (const w of owned) {
+        if ((await loadWorkspace(w.id)).fingerprint !== w.fingerprint) {
+          throw new Conflict(
+            "Local revision changed during upload; no commit made",
+          );
+        }
+      }
+
+      const payload = bytes(JSON.stringify(head));
+      await assertHeld();
+
+      try {
+        await this.storage.put(
+          HEAD_KEY,
+          payload,
+          "application/json",
+          baseline.etag ? { match: baseline.etag } : { absent: true },
+        );
+      } catch (error) {
+        // A network timeout may occur after a successful commit. Resolve by reading our unique commit ID.
+        const check = await this.storage.get(HEAD_KEY);
+        if (!check || text(check) !== new TextDecoder().decode(payload)) {
+          throw error;
+        }
+      }
+
+      const check = await this.storage.get(HEAD_KEY);
+      if (!check || text(check) !== new TextDecoder().decode(payload)) {
+        throw new Error(
+          "Commit verification uncertain; retain local work and inspect remote state",
+        );
+      }
+
+      return { commit, owned, mutations };
+    });
+
+    const cleanupWarnings: string[] = this.lockWarnings.splice(0);
+
+    // Synchronize to PostgreSQL database mirror if DATABASE_URL is set
+    if (process.env.DATABASE_URL) {
+      try {
+        const [{ default: db }, { blogPosts }, { eq }] = await Promise.all([
+          import("../../lib/db"),
+          import("../../lib/db/blog-schema"),
+          import("drizzle-orm"),
+        ]);
+
+        for (const mut of committed.mutations) {
+          if (mut.entry) {
+            const { meta, key: contentKey, revision } = mut.entry;
+            const values = {
+              slug: meta.slug,
+              title: meta.title,
+              description: meta.description,
+              author: meta.author,
+              status: meta.status,
+              category:
+                meta.category as (typeof blogPosts.$inferInsert)["category"],
+              tags: meta.tags,
+              publishedAt: meta.publishedAt ? new Date(meta.publishedAt) : null,
+              updatedAt: meta.updatedAt ? new Date(meta.updatedAt) : null,
+              coverSrc: meta.cover.src,
+              coverAlt: meta.cover.alt,
+              contentKey,
+              revision,
+            };
+
+            await db
+              .insert(blogPosts)
+              .values(values)
+              .onConflictDoUpdate({
+                target: blogPosts.slug,
+                set: {
+                  title: values.title,
+                  description: values.description,
+                  author: values.author,
+                  status: values.status,
+                  category: values.category,
+                  tags: values.tags,
+                  publishedAt: values.publishedAt,
+                  updatedAt: values.updatedAt,
+                  coverSrc: values.coverSrc,
+                  coverAlt: values.coverAlt,
+                  contentKey: values.contentKey,
+                  revision: values.revision,
+                },
+              });
+          } else if (mut.type === "delete") {
+            await db.delete(blogPosts).where(eq(blogPosts.slug, mut.slug));
+          }
+        }
+
+        try {
+          const { articleCatalog } = await import("./catalog");
+          articleCatalog().invalidate();
+        } catch {}
+      } catch (e) {
+        cleanupWarnings.push(`Database mirror sync warning: ${String(e)}`);
+      }
+    }
+
+    // Clean up local workspaces owned by this batch
+    for (const w of committed.owned) {
+      try {
+        if ((await loadWorkspace(w.id)).fingerprint !== w.fingerprint) {
+          throw new Error("Workspace edited after commit; preserving it");
+        }
+        await cleanup(w.id);
+      } catch (e) {
+        cleanupWarnings.push(`${w.id}: ${String(e)}`);
+      }
+    }
+
+    return { committed: true, commit: committed.commit, cleanupWarnings };
+  }
+
+  /** Fetch a published or draft post from remote storage into a local workspace for editing. */
+  async fetch(slug: string): Promise<string> {
+    const { inventory } = await this.snapshot();
+    const entry = inventory.posts.find(
+      (e) => e.meta.slug === slugSchema.parse(slug),
+    );
+    if (!entry) {
+      throw new Error("Post not found");
+    }
+
+    const stored = await this.storage.get(entry.key);
+    if (!stored) {
+      throw new Error("Article missing");
+    }
+
+    return createWorkspace(text(stored), undefined, ".png", {
+      baselineRevision: entry.revision,
+    });
+  }
+
+  /** One-time explicit initialization of empty remote manifest and inventory in a new bucket. */
+  async initialize() {
+    return this.locked(async (assertHeld) => {
+      const snapshot = await this.snapshot(true);
+      if (snapshot.head) {
+        return { initialized: false, reason: "Already initialized" };
+      }
+
+      const commit = randomUUID();
+      const prefix = OBJECT_PREFIX + commit + "/";
+      const head: Head = {
+        version: 1,
+        commit,
+        manifest: prefix + "manifest.json",
+        inventory: prefix + "inventory.json",
+      };
+
+      await this.verifiedPut(
+        head.manifest,
+        bytes(JSON.stringify(snapshot.manifest)),
+        "application/json",
+      );
+      await this.verifiedPut(
+        head.inventory,
+        bytes(JSON.stringify(snapshot.inventory)),
+        "application/json",
+      );
+      await assertHeld();
+      await this.storage.put(
+        HEAD_KEY,
+        bytes(JSON.stringify(head)),
+        "application/json",
+        { absent: true },
+      );
+
+      return { initialized: true };
+    });
+  }
+
+  /**
+   * Identify unreferenced objects older than grace period (default 7 days).
+   * In dryRun mode, only lists keys without deleting.
+   */
+  async gc(dryRun = true) {
+    const run = async (assertHeld: () => Promise<void> = async () => {}) => {
+      const state = await this.snapshot();
+      if (!state.head) {
+        throw new Error("No active head; refusing GC");
+      }
+
+      const live = references(state.head, state.inventory);
+      const now = Date.now();
+      const retirement = new Map(
+        state.inventory.retired.map((r) => [r.key, Date.parse(r.at)]),
+      );
+
+      const candidates = (await this.storage.list(OBJECT_PREFIX)).filter(
+        (o) =>
+          !live.has(o.key) &&
+          now - (retirement.get(o.key) ?? o.modified) > GRACE_MS,
+      );
+
+      if (!dryRun) {
+        for (const object of candidates) {
+          await assertHeld();
+          await this.storage.remove(object.key);
+        }
+      }
+
+      return { dryRun, keys: candidates.map((c) => c.key) };
+    };
+
+    return dryRun ? run() : this.locked(run);
+  }
+}
+
+/**
+ * Completely remove a draft across remote R2, PostgreSQL database,
+ * catalog cache, and local workspace.
+ */
+export async function rejectDraft(
+  id: string,
+  service?: BlogService,
+): Promise<{ id: string; slug?: string; removedFrom: string[] }> {
+  let slug: string | undefined;
+
+  try {
+    const w = await loadWorkspace(id);
+    slug = w.meta.slug;
+  } catch {
+    try {
+      const p = await workspacePath(id);
+      const state = JSON.parse(
+        await readFile(join(p, "state.json"), "utf8"),
+      ) as { originalSlug?: string };
+      slug = state.originalSlug;
+    } catch {}
+  }
+
+  const removedFrom: string[] = [];
+
+  // 1. Remote R2 editorial inventory if present
+  if (slug) {
+    try {
+      const svc = service || new BlogService(new R2Storage());
+      const snapshot = await svc.snapshot(true);
+      if (
+        snapshot.head &&
+        snapshot.inventory.posts.some((p) => p.meta.slug === slug)
+      ) {
+        const plan = await svc.plan([{ type: "delete", slug }]);
+        await svc.commit(plan, true);
+        removedFrom.push("remote");
+      }
+    } catch {
+      // Remote R2 not configured or post was not in remote inventory
+    }
+  }
+
+  // 2. PostgreSQL database mirror if present
+  if (slug && process.env.DATABASE_URL) {
+    try {
+      const [{ default: db }, { blogPosts }, { eq }] = await Promise.all([
+        import("../../lib/db"),
+        import("../../lib/db/blog-schema"),
+        import("drizzle-orm"),
+      ]);
+      await db.delete(blogPosts).where(eq(blogPosts.slug, slug));
+      removedFrom.push("database");
+    } catch {
+      // Database not reachable
+    }
+  }
+
+  // 3. Catalog cache
+  try {
+    const { articleCatalog } = await import("./catalog");
+    articleCatalog().invalidate();
+  } catch {}
+
+  // 4. Local workspace
+  try {
+    await cleanup(id);
+    removedFrom.push("local");
+  } catch {
+    // Already cleaned or not found
+  }
+
+  return { id, slug, removedFrom };
+}

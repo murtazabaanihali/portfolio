@@ -10,7 +10,7 @@ export async function getProjectsDB(
 ) {
     return db.query.projects.findMany({
         where: () =>
-            tag ? sql`${tag} = ANY(${projects.projectTags})` : undefined,
+            tag ? sql`${tag}::project_tag = ANY(${projects.projectTags})` : undefined,
         orderBy: (f, { asc }) => asc(f.order),
         limit: limit,
         offset: (pageNumber - 1) * limit,

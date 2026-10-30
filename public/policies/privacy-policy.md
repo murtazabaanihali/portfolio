@@ -56,7 +56,7 @@ We believe privacy policies should be transparent and straightforward. Here is a
 
 - **Unified Account:** A single central account operated through our authentication service allows you to log in across current and future applications and products operating under Dhem. We only store essential profile identifiers: your email address, unique user ID, display name, avatar, and authentication timestamps.
 - **We Do Not Sell Your Data:** We do not sell, rent, monetize, or trade your personal information to third parties, data brokers, or advertising networks. Ever.
-- **Privacy-First Analytics:** For website and application performance, we utilize privacy-preserving, cookieless analytics hosted on our own infrastructure. Our analytics do not store tracking cookies, do not track you across different websites, do not collect personal identifiers, and respect visitor privacy by design.
+- **Privacy-First Analytics:** For website and application performance, we utilize cookieless analytics hosted on our own infrastructure. Our analytics do not store tracking cookies and do not track you across external websites. In specific interaction events (such as contact form submission telemetry), operational identifiers or submission properties may be processed to confirm delivery and mitigate spam.
 - **AI Processing Transparency:** Many products and services operating under Dhem incorporate artificial intelligence models. When you submit text, research queries, or prompts, they are routed through reputable AI providers (such as OpenRouter, Mistral AI, Groq, Cerebras, and underlying foundational models). Your private inputs and uploaded documents are **not** used to train our internal models or sold to third parties.
 - **Specific Clinical Data Rules (Thesis Maker):** When using Thesis Maker, you may upload research datasets. You are strictly required to upload only **de-identified, anonymized data**. Direct patient identifiers must be removed prior to upload. Datasets are stored in secure cloud storage, accessed via short-lived temporary presigned links, and biostatistical computations are performed in isolated, secure execution environments.
 - **Global Operation with Indian Headquarters:** Dhem is founded and operated in Jammu & Kashmir, India. While data may be processed in secure cloud infrastructure located in multiple international regions (such as the United States and the European Union), your data protection rights are fully recognized under India's Digital Personal Data Protection Act, 2023 (DPDP Act), the European Union General Data Protection Regulation (GDPR), and the California Consumer Privacy Act (CCPA).
@@ -183,6 +183,7 @@ Dhem is committed to minimizing surveillance on the web. We do not use intrusive
 - **Cookieless Operation:** Our analytics configuration does **not** write tracking cookies to your browser, does not access HTML5 persistent storage for tracking purposes, and does not monitor your browsing behavior across external websites.
 - **Anonymized Metrics:** The analytics service records non-identifiable usage statistics: page URLs visited, referring websites, approximate geolocation (country/region level derived on-the-fly without storing raw IP addresses), browser type, and device screen category.
 - **Rotating Daily Identifiers:** To measure unique visits without tracking individuals, a temporary anonymized daily identifier is generated based on incoming request metadata. This identifier automatically resets every 24 hours, making it impossible to reconstruct user profiles over extended time horizons.
+- **Operational Event Telemetry:** When submitting interactive forms (such as contact inquiries), event properties or submitted identifiers may be included in diagnostic event payloads strictly for abuse prevention, submission verification, and operational deliverability monitoring.
 
 ---
 
@@ -381,7 +382,7 @@ The following appendices detail specific data processing operations for individu
 ### Appendix A: Dhem Portfolio & Platform Core (dhem.io)
 - **What It Collects:** 
   - Contact inquiries: Name, email address, message subject, and inquiry text submitted through the contact form.
-  - Analytics telemetry: Anonymized page view events, device categories, and referring sites.
+  - Analytics telemetry: Anonymized page view events, device categories, referring sites, and form submission event properties or identifiers used to verify delivery and detect spam.
 - **Why:** To respond to business, development, and portfolio communications, and to understand aggregate visitor traffic.
 - **Which Providers Receive Data:**
   - **Resend:** Transactional email delivery engine that receives and routes contact form submissions.
