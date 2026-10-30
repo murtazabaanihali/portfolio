@@ -8,6 +8,10 @@ const imageDomain = rawImageDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, 
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Local tooling stays in Git, but must not be copied into the Worker build.
+  outputFileTracingExcludes: {
+    "/*": ["./tools/**/*"],
+  },
   images: {
     remotePatterns: [
       {
