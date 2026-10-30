@@ -10,7 +10,31 @@ import {
 import { dirname, join, resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
-import { parsePost, serializePost, type Post } from "../../lib/blog/contract";
+import { parsePost, serializePost, imageNodes, localImagePath, type Post } from "../../lib/blog/contract";
+
+/** Read only referenced, regular image files; never follow directory/file symlinks. */
+async function readInlineImages(base: string, body: string): Promise<Record<string, Uint8Array>> {
+  const images: Record<string, Uint8Array> = {};
+  const paths = [...new Set(imageNodes(body).map(n => n.url).filter(localImagePath))].sort();
+  if (paths.length > 50) throw new Error("At most 50 inline images per article");
+  let total = 0;
+  for (const src of paths) {
+    const directory = join(base, "images");
+    if (!(await lstat(directory)).isDirectory() || (await lstat(directory)).isSymbolicLink()) {
+      throw new Error("Inline images directory must not be a symlink");
+    }
+    const file = join(base, src);
+    const stat = await lstat(file);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("Inline image must be a regular file, not a symlink");
+    if (stat.size > 10 * 1024 * 1024) throw new Error("Image exceeds 10MB");
+    const data = await readFile(file);
+    imageType(data);
+    total += data.length;
+    if (total > 50 * 1024 * 1024) throw new Error("Inline images exceed 50MB total");
+    images[src] = data;
+  }
+  return images;
+}
 
 /** Base directory for the blog tooling. */
 export const TOOL_DIR = dirname(fileURLToPath(import.meta.url));
@@ -85,6 +109,7 @@ export async function createWorkspace(
   cover?: Uint8Array,
   coverExtension = ".png",
   extra: Partial<WorkspaceState> = {},
+  images: Record<string, Uint8Array> = {},
 ): Promise<string> {
   const parsed = parsePost(raw, true);
   const id = randomUUID();
@@ -100,7 +125,21 @@ export async function createWorkspace(
     throw new Error("Supply the local cover when importing");
   }
 
+  const referenced = [...new Set(imageNodes(parsed.body).map(n => n.url).filter(localImagePath))];
+  if (referenced.length > 50) throw new Error("At most 50 inline images per article");
+  let total = 0;
+  for (const src of referenced) {
+    if (!images[src]) throw new Error(`Supply the local inline image when importing: ${src}`);
+    imageType(images[src]);
+    total += images[src].length;
+  }
+  if (total > 50 * 1024 * 1024) throw new Error("Inline images exceed 50MB total");
+
   await mkdir(path, { recursive: true });
+  if (referenced.length) {
+    await mkdir(join(path, "images"));
+    for (const src of referenced) await writeFile(join(path, src), images[src]);
+  }
   await writeFile(
     join(path, "post.md"),
     serializePost(parsed.meta, parsed.body),
@@ -143,6 +182,7 @@ export async function importPost(
     coverPath ? await readFile(coverPath) : undefined,
     coverPath ? extname(coverPath).toLowerCase() : ".png",
     { sources: [resolve(file)] },
+    await readInlineImages(dirname(resolve(file)), p.body),
   );
 }
 
@@ -154,7 +194,7 @@ export function imageType(
   data: Uint8Array,
 ): "image/png" | "image/jpeg" | "image/webp" {
   if (data.length > 10 * 1024 * 1024) {
-    throw new Error("Cover exceeds 10MB");
+    throw new Error("Image exceeds 10MB");
   }
   if (data[0] === 137 && data[1] === 80 && data[2] === 78 && data[3] === 71) {
     return "image/png";
@@ -168,7 +208,7 @@ export function imageType(
   ) {
     return "image/webp";
   }
-  throw new Error("Invalid cover: only raster PNG/JPEG/WebP accepted");
+  throw new Error("Invalid image: only raster PNG/JPEG/WebP accepted");
 }
 
 /**
@@ -205,11 +245,14 @@ export async function loadWorkspace(id: string) {
     imageType(cover);
   }
 
+  const images = await readInlineImages(path, parsed.body);
+  const imageHashes = Object.entries(images).map(([src, data]) => [src, hash(data)]);
   const fingerprint = hash(
-    raw + "\0" + (cover ? hash(cover) : parsed.meta.cover.src),
+    raw + "\0" + (cover ? hash(cover) : parsed.meta.cover.src) +
+    (imageHashes.length ? "\0" + JSON.stringify(imageHashes) : ""),
   );
 
-  return { id, path, raw, ...parsed, state, cover, fingerprint };
+  return { id, path, raw, ...parsed, state, cover, images, fingerprint };
 }
 
 /** Approve the current workspace revision by recording its fingerprint in state.json. */

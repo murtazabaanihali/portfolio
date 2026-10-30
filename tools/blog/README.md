@@ -60,6 +60,52 @@ cover:
 - `status` controls editorial discovery, not privacy. Raw public R2 drafts can be discovered by third parties even though all website discovery excludes them.
 - Metadata fields are single-line text. Links are validated, raw HTML is rejected, JSON-LD escapes script delimiters, XML is escaped. Derived TOC/reading time need not be maintained by authors.
 
+## Inline images supplied by external agents
+
+Supply real image files alongside the article; this tool **does not capture screenshots** or acquire body images. An external agent chooses placement using ordinary Markdown:
+
+```text
+article/
+├── post.md
+├── cover.png
+└── images/
+    ├── dashboard.png
+    └── settings.webp
+```
+
+```markdown
+## Configure your settings
+
+Open the notification settings panel.
+
+![Notification settings with event toggles](./images/settings.webp)
+
+*Notification settings in the demo account.*
+
+Reference-style images also work: ![Dashboard overview][dashboard]
+
+[dashboard]: ./images/dashboard.png
+```
+
+Run the normal import command; no extra image flags or R2 credentials are needed by the authoring agent:
+
+```sh
+bun run blog import /absolute/article/post.md --cover /absolute/article/cover.png
+bun run blog validate WORKSPACE_ID
+bun run blog plan WORKSPACE_ID --out /tmp/blog-plan.json
+```
+
+- Image paths resolve relative to the source Markdown file, not the shell directory. Only referenced images are copied; original inputs are never deleted.
+- Use a flat `./images/` directory with filenames containing letters, numbers, hyphens or underscores (starting with a letter/number), and lowercase `.png`, `.jpg`, `.jpeg`, or `.webp` extensions. No spaces, nested paths, traversal, SVG, symlinks, or local file links. A reference definition for a local image cannot also be used as an ordinary link.
+- Raster bytes are checked using the same format-signature validation as covers. Limits: 10MB per image, 50 images and 50MB total inline-image bytes per article. Alt text is required; captions can be ordinary italic Markdown below the image.
+- Import makes owned copies in `.work/ID/images/`. An agent editing an existing workspace may also add files there and reference them in `post.md`; validate and approve again afterward.
+- Plans include referenced image paths, byte sizes and SHA-256 hashes. Editing image bytes invalidates approvals and saved plans even when Markdown is unchanged. The TUI diff lists these hashes alongside the text diff.
+- Publication uploads and verifies images, rewrites their Markdown destinations to versioned CDN URLs, and tracks assets for garbage collection. Unresolved local references cannot be published. Upload failures preserve local work and do not activate a partial article.
+- `fetch` retains published CDN references; it does not download inline images again. To replace one, add a local image and update the Markdown reference. Unchanged managed images remain protected by asset tracking.
+- Existing HTTPS image references remain supported and are not downloaded or copied automatically.
+
+**Privacy:** draft uploads are public R2 objects. The supplying agent/operator must remove sensitive information and ensure permission to publish images before uploading. This pipeline does not inspect screenshots for secrets or establish image reuse rights. Built-in generation does not invent or capture inline images; supplied images can be added to its local drafts using the same workspace workflow.
+
 ## Author/import/review/publish
 
 ```sh
@@ -72,7 +118,7 @@ bun run blog approve ID
 bun run blog publish --plan /tmp/blog-plan.json
 ```
 
-Review the real Markdown/frontmatter diff and cover URL/hash changes. An approval applies to the exact raw article + cover bytes. Editing either invalidates it. A saved plan binds all selected workspace fingerprints and the remote head ETag. Commit re-plans and refuses any mismatch. An authorized noninteractive caller may pass `--yes` to approve the exact current plan instead of storing interactive approvals.
+Review the real Markdown/frontmatter diff and cover URL/hash changes. An approval applies to the exact raw article + cover + referenced local inline-image bytes. Editing any of these invalidates it. A saved plan binds all selected workspace fingerprints and the remote head ETag. Commit re-plans and refuses any mismatch. An authorized noninteractive caller may pass `--yes` to approve the exact current plan instead of storing interactive approvals.
 
 `publish` is also the remote **draft-save** operation: a draft workspace remains a draft, is stored in the public bucket/editorial inventory, and is excluded from the published manifest. The command name does not force status to published.
 

@@ -24,6 +24,8 @@ Run commands from the repo root using Bun (or use an absolute CLI path from anot
 6. An operator-authorized automation may use `--yes` instead of a local approval record. Never interpret authoring permission as publishing permission.
 7. Read `cleanupWarnings` separately from `committed`. Do not republish just because cleanup failed.
 
+Inline images: supply PNG/JPEG/WebP files in an `images/` directory beside your source Markdown and place `![Descriptive alt](./images/settings.png)` wherever the image belongs. Reference-style images are supported. `import` automatically copies referenced files, and publication uploads them and rewrites URLs. Use flat filenames beginning with a letter/number, containing only letters/numbers/hyphens/underscores, with lowercase extensions; no symlinks or traversal. Limits: 10MB each, 50 images/50MB total. Do not use a local-image reference definition for ordinary links too. Existing workspaces may receive files directly in `.work/ID/images/`; validate/replan/reapprove after edits. Image bytes are approval-bound. The tool does not capture screenshots or acquire inline images. You supply files and ensure privacy/reuse rights before any public draft upload. See README.md for the bundle format.
+
 Editing remote posts: `fetch SLUG` returns an owned workspace bound to its remote revision. Edit post.md via the returned workspace location or known tools/blog/.work/ID, preserve slug/publication time, then review again.
 
 Batch JSON: `{"version":1,"actions":[{"type":"upsert","workspace":"UUID"}]}`.

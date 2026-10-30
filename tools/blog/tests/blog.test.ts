@@ -4,7 +4,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
+import { readFile, writeFile, mkdtemp, rm, mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { BlogService, rejectDraft } from "../core";
@@ -16,6 +16,7 @@ import {
   loadWorkspace,
   hash,
   imageType,
+  importPost,
 } from "../workspace";
 import {
   articleInfo,
@@ -23,6 +24,8 @@ import {
   serializePost,
   jsonLd,
   manifestSchema,
+  rewriteImageUrls,
+  imageNodes,
   type Post,
 } from "../../../lib/blog/contract";
 import { HEAD_KEY, GRACE_MS, siteUrl } from "../../../lib/blog/config";
@@ -220,6 +223,117 @@ describe("content and discovery", () => {
     await expect(
       service.plan([{ type: "upsert", workspace: id }]),
     ).rejects.toThrow("Future");
+  });
+});
+
+describe("supplied inline images", () => {
+  const illustrated = body + '\n\n![Settings panel](./images/settings.png "Settings")\n\n![Same panel][panel]\n\n[panel]: ./images/settings.png\n\n`./images/settings.png`\n';
+
+  test("imports a portable bundle, publishes both image forms, and retains assets on fetch/GC", async () => {
+    const source = await mkdtemp(join(tmpdir(), "blog-images-"));
+    try {
+      await mkdir(join(source, "images"));
+      await writeFile(join(source, "images/settings.png"), png);
+      await writeFile(join(source, "post.md"), serializePost(meta(), illustrated));
+      const id = await importPost(join(source, "post.md"));
+      ids.push(id);
+      const w = await loadWorkspace(id);
+      expect(w.images["./images/settings.png"]).toEqual(png);
+      const { service, storage } = await setup();
+      const plan = await service.plan([{ type: "upsert", workspace: id }]);
+      expect(plan.changes[0].images).toEqual([{ src: "./images/settings.png", sha256: hash(png), bytes: png.length }]);
+      expect(storage.mutations).toEqual([]);
+      await approve(id);
+      await service.commit(plan);
+      const entry = (await service.snapshot()).manifest.posts[0];
+      expect(entry.assets).toHaveLength(1);
+      expect((await storage.get(entry.assets[0]))!.bytes).toEqual(png);
+      const published = text((await storage.get(entry.key))!);
+      expect(published).toContain('![Settings panel](https://content.example.com/');
+      expect(published).toContain('[panel]: https://content.example.com/');
+      expect(published).toContain('`./images/settings.png`');
+      expect(() => parsePost(published)).not.toThrow();
+      expect(await readFile(join(source, "images/settings.png"))).toEqual(png);
+      const fetched = await service.fetch(entry.meta.slug);
+      ids.push(fetched);
+      expect((await loadWorkspace(fetched)).body).toContain(entry.assets[0]);
+      await service.gc(true);
+      expect(await storage.get(entry.assets[0])).not.toBeNull();
+    } finally {
+      await rm(source, { recursive: true, force: true });
+    }
+  });
+
+  test("image-only changes invalidate approvals and saved plans", async () => {
+    const id = await createWorkspace(serializePost(meta(), illustrated), undefined, ".png", {}, { "./images/settings.png": png });
+    ids.push(id);
+    const { service } = await setup();
+    await approve(id);
+    const plan = await service.plan([{ type: "upsert", workspace: id }]);
+    const w = await loadWorkspace(id);
+    await writeFile(join(w.path, "images/settings.png"), Buffer.concat([png, Buffer.from([0])]));
+    expect((await loadWorkspace(id)).fingerprint).not.toBe(w.state.approval);
+    await expect(service.commit(plan, true)).rejects.toThrow("changed");
+    await expect(service.commit(await service.plan([{ type: "upsert", workspace: id }]))).rejects.toThrow("Approval");
+  });
+
+  test("failed image upload preserves workspace and remote head", async () => {
+    const id = await createWorkspace(serializePost(meta(), illustrated), undefined, ".png", {}, { "./images/settings.png": png });
+    ids.push(id);
+    const { service, storage } = await setup();
+    const before = text((await storage.get(HEAD_KEY))!);
+    storage.failKey = "-image-";
+    await expect(service.commit(await service.plan([{ type: "upsert", workspace: id }]), true)).rejects.toThrow("Simulated");
+    expect(text((await storage.get(HEAD_KEY))!)).toBe(before);
+    expect((await loadWorkspace(id)).images["./images/settings.png"]).toEqual(png);
+  });
+
+  test("local paths are image-only, safe, and forbidden in published content", async () => {
+    for (const url of ["./images/../secret.png", "./images/nested/a.png", "./images/a.svg", "../a.png", "file:///tmp/a.png", "./images/a%2epng"]) {
+      expect(() => parsePost(serializePost(meta(), body + `\n![Image](${url})`), true)).toThrow("Unsafe");
+    }
+    expect(() => parsePost(serializePost(meta(), illustrated))).toThrow("Unsafe");
+    expect(() => parsePost(serializePost(meta(), body + "\n[Link](./images/settings.png)"), true)).toThrow("Unsafe");
+    expect(() => parsePost(serializePost(meta(), illustrated + "\n[Link][panel]"), true)).toThrow("Unsafe");
+    expect(() => parsePost(serializePost(meta(), body + "\n![][panel]\n\n[panel]: https://example.com/a.png"), true)).toThrow("alt");
+    await expect(createWorkspace(serializePost(meta(), illustrated))).rejects.toThrow("Supply the local inline image");
+  });
+
+  test("rewriting preserves escaped alt text and leaves non-image text alone", () => {
+    const source = '![Panel \\[A\\]](./images/settings.png "Settings")\n\nA prose path: ./images/settings.png';
+    const rewritten = rewriteImageUrls(source, new Map([["./images/settings.png", "https://example.com/image.png"]]));
+    const node = imageNodes(rewritten)[0];
+    expect(node.type === "image" && node.alt).toBe("Panel [A]");
+    expect(node.title).toBe("Settings");
+    expect(rewritten).toContain("A prose path: ./images/settings.png");
+  });
+
+  test("image count and byte limits are enforced before workspace creation", async () => {
+    await expect(createWorkspace(serializePost(meta(), illustrated), undefined, ".png", {}, {
+      "./images/settings.png": new Uint8Array(10 * 1024 * 1024 + 1),
+    })).rejects.toThrow("10MB");
+    const many = Array.from({ length: 51 }, (_, i) => `![Image ${i}](./images/image-${i}.png)`).join("\n\n");
+    await expect(createWorkspace(serializePost(meta(), many))).rejects.toThrow("50 inline images");
+  });
+
+  test("missing files, non-images and symlink files/directories are refused", async () => {
+    const source = await mkdtemp(join(tmpdir(), "blog-images-"));
+    try {
+      await mkdir(join(source, "images"));
+      await writeFile(join(source, "post.md"), serializePost(meta(), illustrated));
+      await expect(importPost(join(source, "post.md"))).rejects.toThrow();
+      await writeFile(join(source, "images/settings.png"), "not an image");
+      await expect(importPost(join(source, "post.md"))).rejects.toThrow("Invalid image");
+      await rm(join(source, "images/settings.png"));
+      await writeFile(join(source, "actual.png"), png);
+      await symlink(join(source, "actual.png"), join(source, "images/settings.png"));
+      await expect(importPost(join(source, "post.md"))).rejects.toThrow("symlink");
+      await rm(join(source, "images"), { recursive: true });
+      await symlink(source, join(source, "images"));
+      await expect(importPost(join(source, "post.md"))).rejects.toThrow("symlink");
+    } finally {
+      await rm(source, { recursive: true, force: true });
+    }
   });
 });
 

@@ -24,12 +24,12 @@ import { articleCatalog, searchArticles } from "./catalog";
 const help = `Local blog workflow (never runs in the Worker)
 bun run blog <command> [arguments] [options]
 
-import <post.md> [--cover path]       Copy source into an owned workspace
+import <post.md> [--cover path]       Copy source + referenced ./images/ files into owned workspace
 import-batch <files.json>            JSON array of {file, cover?}
 workspaces                          Local work/review status
 validate <id>                       Validate one workspace
 status <id> draft|published          Set editorial status; publication dates set explicitly
-approve <id>                        Approve exact content + cover revision
+approve <id>                        Approve exact content + cover + inline-image revision
 plan <id...> [--batch actions.json]  Read-only diff (optionally --out plan.json)
 publish <id...>                     Plan/commit; --yes is explicit noninteractive authorization
 publish --plan plan.json           Commit only if plan, content, and remote baseline still match
@@ -50,7 +50,7 @@ cover <id> --yes [--regenerate]     Retry/reuse cover (regenerate only explicitl
 revise <id> --instructions "..." --yes  Fresh research agent + rewrite; may incur charges
 tui                                Keyboard review, diff, approval, editor, generation
 
-All results are JSON. Plans contain text/frontmatter diffs and cover hashes.
+All results are JSON. Plans contain text/frontmatter diffs, cover hashes and local inline-image hashes.
 Exit codes: 0 success; 1 operation failure/partial generation; 2 invalid input;
 3 concurrent state/revision conflict; 4 missing explicit authorization.
 See tools/blog/README.md and AGENTS.md. No implicit remote deletion.

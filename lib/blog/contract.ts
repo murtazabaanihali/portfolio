@@ -80,6 +80,35 @@ export function walk(node: Root | RootContent, fn: (node: Root | RootContent) =>
   fn(node);
   if ("children" in node) for (const child of node.children) walk(child as RootContent, fn);
 }
+/** Local image bundles deliberately use a flat, traversal-free images directory. */
+export const localImagePath = (url: string) => /^\.\/images\/[a-zA-Z0-9][a-zA-Z0-9_-]*\.(png|jpg|jpeg|webp)$/.test(url);
+
+/** Include only definitions actually used by images (not ordinary links). */
+export function imageNodes(body: string) {
+  const tree = markdownTree(body);
+  const ids = new Set<string>();
+  walk(tree, node => { if (node.type === "imageReference") ids.add(node.identifier); });
+  const nodes: Array<Extract<RootContent, { type: "image" | "definition" }>> = [];
+  walk(tree, node => {
+    if (node.type === "image" || (node.type === "definition" && ids.has(node.identifier))) nodes.push(node);
+  });
+  return nodes;
+}
+
+/** Rewrite AST-selected destinations without touching prose, code, or alt text. */
+export function rewriteImageUrls(body: string, urls: Map<string, string>): string {
+  for (const node of imageNodes(body).reverse()) {
+    const url = urls.get(node.url);
+    if (!url) continue;
+    const title = node.title ? " " + JSON.stringify(node.title) : "";
+    const replacement = node.type === "image"
+      ? `![${(node.alt || "").replace(/[\\\\\[\]]/g, char => "\\" + char)}](${url}${title})`
+      : `[${node.label || node.identifier}]: ${url}${title}`;
+    body = body.slice(0, node.position!.start.offset!) + replacement + body.slice(node.position!.end.offset!);
+  }
+  return body;
+}
+
 export function parsePost(raw: string, local = false): { meta: Post; body: string } {
   if (raw.length > 500_000) throw new Error("Markdown exceeds 500KB");
   const cleaned = raw.replace(/^\uFEFF/, "").trim().replace(/^```(?:markdown|md)?\r?\n/i, "").replace(/\r?\n```$/i, "");
@@ -91,10 +120,17 @@ export function parsePost(raw: string, local = false): { meta: Post; body: strin
   if (!local && meta.cover.src.startsWith("./")) throw new Error("Local cover not resolved");
   const body = match[2].trim() + "\n";
   if (body.trim().length < 40) throw new Error("Article body is too short");
-  walk(markdownTree(body), node => {
+  const tree = markdownTree(body);
+  const imageIds = new Set(imageNodes(body).filter(node => node.type === "definition").map(node => node.identifier));
+  const linkIds = new Set<string>();
+  walk(tree, node => { if (node.type === "linkReference") linkIds.add(node.identifier); });
+  walk(tree, node => {
     if (node.type === "html") throw new Error("Raw HTML/MDX is not allowed");
-    if (node.type === "image" && !node.alt?.trim()) throw new Error("Images require alt text");
-    if ("url" in node && !safeUrl(node.url, node.type === "image"))
+    if ((node.type === "image" || node.type === "imageReference") && !node.alt?.trim()) throw new Error("Images require alt text");
+    const isImage = node.type === "image" || (node.type === "definition" && imageIds.has(node.identifier));
+    if ("url" in node && local && isImage && localImagePath(node.url) &&
+      !(node.type === "definition" && linkIds.has(node.identifier))) return;
+    if ("url" in node && !safeUrl(node.url, isImage))
       throw new Error(`Unsafe or non-absolute Markdown URL: ${node.url}`);
   });
   return { meta, body };

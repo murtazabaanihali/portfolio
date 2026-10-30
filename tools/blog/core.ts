@@ -15,6 +15,7 @@ import {
   manifestSchema,
   parsePost,
   serializePost,
+  rewriteImageUrls,
   slugSchema,
   objectKey,
   type Entry,
@@ -61,6 +62,7 @@ export type Change = {
   fingerprint?: string;
   diff: string;
   cover: { before?: string; after?: string };
+  images?: { src: string; sha256: string; bytes: number }[];
 };
 
 /** Published batch plan with verification token and baseline ETag. */
@@ -287,6 +289,9 @@ export class BlogService {
         slug,
         kind,
         fingerprint: w?.fingerprint,
+        ...(w && Object.keys(w.images).length ? {
+          images: Object.entries(w.images).map(([src, data]) => ({ src, sha256: hash(data), bytes: data.length })),
+        } : {}),
         diff: createTwoFilesPatch(
           slug + "/before.md",
           slug + "/after.md",
@@ -432,7 +437,18 @@ export class BlogService {
             await this.verifiedPut(meta.cover.src, w.cover, type);
           }
 
-          const raw = serializePost(meta, w.body);
+          const imageUrls = new Map<string, string>();
+          for (const [src, data] of Object.entries(w.images)) {
+            const { imageType } = await import("./workspace");
+            const type = imageType(data);
+            const ext = type === "image/jpeg" ? "jpg" : type.split("/")[1];
+            const asset = prefix + change.slug + "-image-" + hash(data) + "." + ext;
+            if (![...imageUrls.values()].includes(cdnUrl(asset))) {
+              await this.verifiedPut(asset, data, type);
+            }
+            imageUrls.set(src, cdnUrl(asset));
+          }
+          const raw = serializePost(meta, rewriteImageUrls(w.body, imageUrls));
           const key = prefix + change.slug + ".md";
           parsePost(raw);
 

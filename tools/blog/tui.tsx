@@ -507,7 +507,7 @@ function App() {
           next.changes
             .map(
               (c) =>
-                `${c.kind.toUpperCase()}: ${c.slug}\nCover: ${c.cover.before || "none"} → ${c.cover.after || "none"}\n${safeTerminal(c.diff)}`,
+                `${c.kind.toUpperCase()}: ${c.slug}\nCover: ${c.cover.before || "none"} → ${c.cover.after || "none"}\n${(c.images || []).map(image => `Image: ${image.src} (${image.bytes} bytes, sha256 ${image.sha256})`).join("\n")}\n${safeTerminal(c.diff)}`,
             )
             .join("\n"),
         );
