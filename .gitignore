@@ -36,4 +36,6 @@ next-env.d.ts
 # Local editorial context and disposable blog workspaces
 /tools/blog/blog-context.md
 /tools/blog/.work/
+tools/blog/.work/*
+tools/blog/.work/
 /.pi/
