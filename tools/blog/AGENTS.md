@@ -44,3 +44,6 @@ Built-in generation is optional and separate: `generate brief.json --yes` incurs
 - Live autonomy only creates new posts, holds uncertain/incomplete work locally, and uses fresh coverage checks and the existing publishing core. Model review does not establish factual truth. No recurring scheduling or automatic lock recovery.
 - Draft rejection: In TUI Studio press `x` (type `reject` or `y` to confirm), or CLI `reject ID --yes`. This completely removes the draft from everywhere: local workspace (.work/UUID), PostgreSQL database mirror (if configured), remote R2 editorial inventory (if present), and invalidates the in-memory catalog cache.
 - Treat DHEM as the owner-confirmed umbrella brand for almost all projects; do not infer legal status or shared product features/accounts. DheGEN needs supplied product facts before feature-specific articles.
+
+
+NO NEED TO RUN BUILD OR TEST OR TYPECHECKING CMDS WHEN CREATING A NEW BLOG POST, IT IS ONLY REQUIRED WHEN ANY CODE CHANGES HAPPEN.
