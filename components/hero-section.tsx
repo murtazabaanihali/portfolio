@@ -20,7 +20,7 @@ export function HeroSection() {
                     I am a full-stack developer who loves turning ideas into real applications. Over
                     the years, I have built web and mobile products that focus on being simple to
                     use and flexible enough to grow with you. Along with full-stack development, I am also
-                    the founder of projects like iReplyy, Dhesend, and Tajven.
+                    the founder of projects like Thesis Maker, iReplyy, Dhesend, and DheGEN.
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">

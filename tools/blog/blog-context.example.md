@@ -34,9 +34,9 @@ Natural fit: transactional email integration, notifications, developer email wor
 
 Not established: deliverability claims, supported SDK languages, retries/idempotency, analytics, pricing, scale or a replacement canonical domain. A general article about retry design does not establish that Dhesend implements that design. Never invent runnable Dhesend API examples without current documentation.
 
-### DheGEN / other products
+### DheGEN — https://dhegen.dhem.io/
 
-DheGEN is owner-identified but has no maintained capability description, confirmed URL or availability here. Do not propose feature-specific content or guess its URL. Tajven (https://tajven.com/) was previously portfolio-linked with a founder association, but its capabilities and any relationship to DheGEN remain unconfirmed. Missing facts are a reason to choose another supported example, not to invent one.
+Confirmed facts: All-in-one AI content creation suite (text, image generation, face swap, and video transformation). Live URL: https://dhegen.dhem.io/.
 
 ## Marketing decision guide
 

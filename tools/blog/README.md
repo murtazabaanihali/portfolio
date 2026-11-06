@@ -259,7 +259,7 @@ Search uses DuckDuckGo HTML with independent Bing RSS fallback. Each query has a
 
 A complete dossier requires at least three queries, five read pages across two hosts, three findings with exact passages present in fetched pages, and the model's sufficiency assessment with no reported unresolved gaps. These conservative coverage/provenance checks **do not prove factual truth, independent corroboration or quotation entailment**. Source reliability and claim support still need editorial judgment. Snippets cannot support dossier quotations. Tool errors are returned to the agent for follow-up and saved in the trace. Budget exhaustion, failed models or insufficient evidence create visible warnings; any resulting draft remains held from unattended publication. Revision preserves pre-existing warnings conservatively. Inspect and resolve them rather than treating a new model response as approval.
 
-`blog-context.md` is populated locally and gitignored; `blog-context.example.md` contains the public-fact seed/reference. Both built-in generation and external-agent instructions use the actual file. It includes known product links and uncertainty notes, including the unavailable Tajven page. Context is human-maintained and survives cleanup.
+`blog-context.md` is populated locally and gitignored; `blog-context.example.md` contains the public-fact seed/reference. Both built-in generation and external-agent instructions use the actual file. It includes known product links and confirmed product descriptions. Context is human-maintained and survives cleanup.
 
 ## Verification
 
