@@ -42,7 +42,7 @@ export function ImageCarousel({ images, title }: ImageCarouselProps) {
                     height={0}
                     sizes="(max-width: 1024px) 100vw, 896px"
                     fill={false}
-                    quality={100}
+                    quality={75}
                     className="object-contain size-full"
                 />
 
