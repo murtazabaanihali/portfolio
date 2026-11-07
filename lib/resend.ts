@@ -47,7 +47,8 @@ export const sendContactMail = async ({
             "TO: ",
             _to
         );
-    };
+        throw new Error(error.message || "Failed to send email");
+    }
 
-    return null;
+    return data;
 };

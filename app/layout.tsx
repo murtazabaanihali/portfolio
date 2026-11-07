@@ -6,10 +6,11 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Navigation } from "@/components/navigation";
 import { Footer } from "@/components/footer";
+import { siteUrl } from "@/lib/blog/config";
 
 const inter = Inter({ subsets: ["latin"] });
 
-const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://developer.dhem.io";
+const baseUrl = siteUrl();
 
 export const metadata: Metadata = {
     metadataBase: new URL(baseUrl),
@@ -18,7 +19,7 @@ export const metadata: Metadata = {
         template: "%s | Murtaza Baanihali",
     },
     description:
-        "Full-Stack Developer with 5 years of hands-on programming experience, driven by a passion for turning complex ideas into shipped, user-centric products. Having developed a strong technical foundation since 8th grade, I specialize in end-to-end development—from initialscoping and UX to deploying scalable architectures using MERN, PERN and python based stacks. As the founder of multiple SaaS platformslike iReplyy, Dhesend, and Tajven, I bring an entrepreneurial mindset, a focus on performance, and a dedication to writing clean,maintainable code.",
+        "Full-Stack Developer with 5 years of hands-on programming experience, driven by a passion for turning complex ideas into shipped, user-centric products. Having developed a strong technical foundation since 8th grade, I specialize in end-to-end development—from initial scoping and UX to deploying scalable architectures using MERN, PERN, and Python-based stacks. As the founder of multiple SaaS platforms like Thesis Maker, iReplyy, Dhesend, and DheGEN, I bring an entrepreneurial mindset, a focus on performance, and a dedication to writing clean, maintainable code.",
     keywords: [
         "Murtaza Baanihali",
         "Full-Stack Developer",

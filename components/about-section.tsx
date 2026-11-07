@@ -32,7 +32,7 @@ export function AboutSection() {
                                         </AvatarFallback>
                                     </Avatar>
                                     <p className="text-muted-foreground font-medium">
-                                        Professional full-stack Developer
+                                        Professional Full-Stack Developer
                                     </p>
                                 </div>
                             </div>
@@ -57,7 +57,7 @@ export function AboutSection() {
                                                 </AvatarFallback>
                                             </Avatar>
                                             <p className="text-muted-foreground font-medium">
-                                                Professional full-stack Developer
+                                                Professional Full-Stack Developer
                                             </p>
                                         </div>
                                     </div>
@@ -77,6 +77,10 @@ export function AboutSection() {
                                 </p>
                                 <p className="[&>a]:font-medium [&>a]:underline [&>a]:underline-offset-4">
                                     I am also founder of{" "}
+                                    <a target="_blank" href="https://thesis.dhem.io/">
+                                        Thesis Maker
+                                    </a>
+                                    ,{" "}
                                     <a target="_blank" href="https://ireplyy.dhem.io/">
                                         iReplyy
                                     </a>
@@ -85,8 +89,8 @@ export function AboutSection() {
                                         Dhesend
                                     </a>
                                     ,{" "}
-                                    <a target="_blank" href="https://tajven.com/">
-                                        Tajven
+                                    <a target="_blank" href="https://dhegen.dhem.io/">
+                                        DheGEN
                                     </a>{" "}
                                     , and many other projects — each built to solve real problems
                                     I’ve seen. It’s rewarding to ship tools that people actually

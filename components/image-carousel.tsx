@@ -40,8 +40,9 @@ export function ImageCarousel({ images, title }: ImageCarouselProps) {
                     alt={`${title} - Image ${currentIndex + 1}`}
                     width={0}
                     height={0}
-                    sizes="100vw"
+                    sizes="(max-width: 1024px) 100vw, 896px"
                     fill={false}
+                    quality={75}
                     className="object-contain size-full"
                 />
 
@@ -83,6 +84,7 @@ export function ImageCarousel({ images, title }: ImageCarouselProps) {
                                 src={getImageFullURL(image)}
                                 alt={`${title} - Thumbnail ${index + 1}`}
                                 fill
+                                sizes="(max-width: 768px) 25vw, 128px"
                                 className="object-cover size-full max-w-32 max-h-32 aspect-square"
                             />
                         </button>

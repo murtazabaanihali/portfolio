@@ -1,0 +1,1 @@
+export default function Loading() { return <main className="mx-auto max-w-3xl px-5 pb-24 pt-32" aria-busy="true"><p role="status">Loading articles…</p><div className="mt-6 h-48 animate-pulse rounded-2xl bg-muted" /></main>; }

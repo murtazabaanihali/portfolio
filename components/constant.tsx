@@ -237,6 +237,7 @@ export const SKILL_CATEGORIES = [
 export const NAVIGATION_ITEMS = [
     { name: "Home", href: "/" },
     { name: "Projects", href: "/projects" },
+    { name: "Blog", href: "/blog" },
     { name: "About", href: "/#about" },
     { name: "Contact", href: "/#contact" },
 ];

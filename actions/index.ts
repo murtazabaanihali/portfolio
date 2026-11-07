@@ -1,12 +1,12 @@
 "use server";
 
-import { unstable_cache } from "next/cache";
 import { headers } from "next/headers";
 
 import { ProjectTag } from "@/lib/db/schema";
 import { sendContactMail } from "@/lib/resend";
 import { getProjectBySlugDB, getProjectsDB } from "@/lib/db/queries";
 import { checkEmailRateLimit, getClientIp } from "@/lib/ratelimit";
+import { withRedisCache, isDynamicServerError } from "@/lib/cache";
 
 export const contactMe = async (form: FormData) => {
     try {
@@ -40,25 +40,22 @@ export const contactMe = async (form: FormData) => {
         };
     } catch (error) {
         console.log("Error contacting me", error);
-        return { error: "Internal server error!" };
+        return { error: "Failed to send message. Please try again later or contact directly." };
     }
 };
 
 export const getProjects = async (pageNumber: number = 1, tag?: ProjectTag) => {
     try {
-        return await unstable_cache(
-            async (pageNumber: number, tag: ProjectTag | undefined) => {
-                const projects = await getProjectsDB(
-                    Math.max(1, pageNumber),
-                    tag,
-                    12,
-                );
-                return { projects, more: projects?.length >= 12 };
-            },
-            ["projects"],
-            { revalidate: 3 * 3600, tags: ["projects"] },
-        )(pageNumber, tag);
+        const page = Math.max(1, pageNumber);
+        const cacheKey = `cache:projects:${page}:${tag || "all"}`;
+        const ttl = 3 * 3600; // 3 hours
+
+        return await withRedisCache(cacheKey, ttl, async () => {
+            const projects = await getProjectsDB(page, tag, 12);
+            return { projects, more: projects?.length >= 12 };
+        });
     } catch (error) {
+        if (isDynamicServerError(error)) throw error;
         console.log("Error getting projects ", error);
         return { projects: [], more: false };
     }
@@ -66,12 +63,14 @@ export const getProjects = async (pageNumber: number = 1, tag?: ProjectTag) => {
 
 export const getProjectBySlug = async (slug: string) => {
     try {
-        return await unstable_cache(
-            async (slug: string) => getProjectBySlugDB(slug),
-            ["project-by-slug"],
-            { revalidate: 3 * 3600, tags: ["projects"] },
-        )(slug);
+        const cacheKey = `cache:project:${slug}`;
+        const ttl = 3 * 3600; // 3 hours
+
+        return await withRedisCache(cacheKey, ttl, async () => {
+            return getProjectBySlugDB(slug);
+        });
     } catch (error) {
+        if (isDynamicServerError(error)) throw error;
         console.log("Error getting project by slug ", error);
         return null;
     }
