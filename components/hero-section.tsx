@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowUpRight, Download, Mail } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { getImageFullURL } from "@/lib/utils";
 
 export function HeroSection() {
     return (
@@ -41,7 +42,7 @@ export function HeroSection() {
                     </Link>
                 </div>
                 <div className="mx-auto mt-8">
-                    <Link href={"/resume.pdf"} target="_blank">
+                    <Link href={getImageFullURL("0001-Murtaza-Baanihali-Resume-Final.pdf")} target="_blank">
                         <Button variant="link" size="lg" className="text-lg px-8 py-6">
                             <Download className="mr-2 h-5 w-5" />
                             Download My Resume
