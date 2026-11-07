@@ -8,6 +8,13 @@ const imageDomain = rawImageDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, 
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  turbopack: {
+    rules: {
+      "*.md": {
+        type: "text",
+      },
+    },
+  },
   images: {
     remotePatterns: [
       {
