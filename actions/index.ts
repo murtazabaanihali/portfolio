@@ -8,7 +8,6 @@ import {
     getProjectBySlugDB,
     getProjectsDB,
     getBlogPostsDB,
-    getBlogCategoriesCountDB,
     getBlogPostBySlugDB,
     getRelatedBlogPostsDB,
     type BlogQueryParamsDB,
@@ -121,26 +120,10 @@ export const getBlogPosts = async (params: BlogQueryParams = {}) => {
         console.error("Error getting blog posts:", error);
         return {
             posts: [],
-            total: 0,
             page: 1,
             limit: BLOG_PAGE_SIZE,
-            totalPages: 1,
             hasMore: false,
         };
-    }
-};
-
-export const getBlogCategoriesCount = async () => {
-    try {
-        return await withRedisCache(
-            BLOG_CACHE_KEYS.categoriesCount,
-            BLOG_CACHE_TTL,
-            async () => getBlogCategoriesCountDB()
-        );
-    } catch (error) {
-        if (isDynamicServerError(error)) throw error;
-        console.error("Error getting blog categories count:", error);
-        return {};
     }
 };
 

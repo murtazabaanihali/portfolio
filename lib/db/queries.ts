@@ -1,4 +1,4 @@
-import { sql, eq, and, desc, count, ilike, type SQL } from "drizzle-orm";
+import { sql, eq, and, desc, ilike, type SQL } from "drizzle-orm";
 
 import db from "@/lib/db";
 import {
@@ -97,45 +97,23 @@ export async function getBlogPostsDB(params: BlogQueryParamsDB = {}) {
 
     const whereClause = and(...conditions);
 
-    const [rows, countRows] = await Promise.all([
-        db.query.blogPosts.findMany({
-            where: whereClause,
-            orderBy: [desc(blogPosts.publishedAt)],
-            limit,
-            offset,
-        }),
-        db.select({ value: count() }).from(blogPosts).where(whereClause),
-    ]);
+    // Fetch limit + 1 rows to determine if more items exist without running count()
+    const rows = await db.query.blogPosts.findMany({
+        where: whereClause,
+        orderBy: [desc(blogPosts.publishedAt)],
+        limit: limit + 1,
+        offset,
+    });
 
-    const total = Number(countRows[0]?.value || 0);
-    const totalPages = Math.max(1, Math.ceil(total / limit));
-    const hasMore = page < totalPages;
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
 
     return {
-        posts: rows.map(blogPostToPost),
-        total,
+        posts: pageRows.map(blogPostToPost),
         page,
         limit,
-        totalPages,
         hasMore,
     };
-}
-
-export async function getBlogCategoriesCountDB(): Promise<Record<string, number>> {
-    const rows = await db
-        .select({
-            category: blogPosts.category,
-            count: count(),
-        })
-        .from(blogPosts)
-        .where(eq(blogPosts.status, "published"))
-        .groupBy(blogPosts.category);
-
-    const counts: Record<string, number> = {};
-    for (const row of rows) {
-        counts[row.category] = Number(row.count);
-    }
-    return counts;
 }
 
 export async function getBlogPostBySlugDB(slug: string) {

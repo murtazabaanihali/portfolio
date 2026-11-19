@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { BlogListing } from "@/components/blog/blog-listing";
 import { siteUrl } from "@/lib/blog/config";
-import { getBlogPosts, getBlogCategoriesCount } from "@/actions";
+import { getBlogPosts } from "@/actions";
 import { BLOG_PAGE_SIZE } from "@/lib/constants";
 
 export const revalidate = 604800; // 7 days (high TTL)
@@ -38,16 +38,13 @@ export default async function Blog({
   const query = await searchParams;
   const page = Math.max(1, Number.parseInt(query.page || "1", 10) || 1);
 
-  const [initialData, categoriesCount] = await Promise.all([
-    getBlogPosts({
-      page,
-      limit: BLOG_PAGE_SIZE,
-      category: query.category,
-      tag: query.tag,
-      search: query.q,
-    }),
-    getBlogCategoriesCount(),
-  ]);
+  const initialData = await getBlogPosts({
+    page,
+    limit: BLOG_PAGE_SIZE,
+    category: query.category,
+    tag: query.tag,
+    search: query.q,
+  });
 
   return (
     <main className="mx-auto max-w-3xl px-5 pb-24 pt-28 sm:px-8">
@@ -72,7 +69,6 @@ export default async function Blog({
 
       <BlogListing
         initialData={initialData}
-        categoriesCount={categoriesCount}
         initialCategory={query.category}
         initialTag={query.tag}
         initialSearch={query.q}

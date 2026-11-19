@@ -31,6 +31,5 @@ export const BLOG_CACHE_KEYS = {
         `cache:blogs:search:${query.toLowerCase().trim()}:${page}:${limit}:${category}:${tag}`,
     bySlug: (slug: string) => `cache:blog:${slug}`,
     related: (slug: string, category: string) => `cache:blog:related:${slug}:${category}`,
-    categoriesCount: "cache:blog:categories-count",
     sitemap: "cache:blog:sitemap",
 } as const;

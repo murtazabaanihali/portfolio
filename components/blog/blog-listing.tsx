@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect, useTransition, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Search, X, Loader2 } from "lucide-react";
 
 import { FeaturedPost } from "@/components/blog/featured-post";
@@ -16,7 +14,6 @@ type BlogPostsResult = Awaited<ReturnType<typeof getBlogPosts>>;
 
 interface BlogListingProps {
     initialData: BlogPostsResult;
-    categoriesCount: Record<string, number>;
     initialCategory?: string;
     initialTag?: string;
     initialSearch?: string;
@@ -25,13 +22,11 @@ interface BlogListingProps {
 
 export function BlogListing({
     initialData,
-    categoriesCount,
     initialCategory,
     initialTag,
     initialSearch = "",
     initialPage = 1,
 }: BlogListingProps) {
-    const router = useRouter();
     const [isPending, startTransition] = useTransition();
 
     const [searchInput, setSearchInput] = useState(initialSearch);
@@ -108,7 +103,7 @@ export function BlogListing({
 
     // Handle pagination page click
     const handlePageChange = (newPage: number) => {
-        if (newPage < 1 || newPage > data.totalPages || newPage === page) return;
+        if (newPage < 1 || (newPage > page && !data.hasMore) || newPage === page) return;
         setPage(newPage);
         executeFetch(
             {
@@ -151,6 +146,7 @@ export function BlogListing({
             : undefined;
 
     const listedPosts = featured ? data.posts.slice(1) : data.posts;
+    const showPagination = page > 1 || data.hasMore;
 
     return (
         <div ref={containerRef}>
@@ -197,31 +193,25 @@ export function BlogListing({
                     >
                         All
                     </button>
-                    {categories
-                        .filter((c) => (categoriesCount[c.slug] || 0) > 0)
-                        .map((c) => {
-                            const count = categoriesCount[c.slug] || 0;
-                            const isSelected = category === c.slug;
-                            return (
-                                <button
-                                    key={c.slug}
-                                    type="button"
-                                    onClick={() => handleCategoryClick(c.slug)}
-                                    aria-current={isSelected ? "page" : undefined}
-                                    className={
-                                        "shrink-0 rounded-full border px-3 py-1.5 text-sm transition-colors " +
-                                        (isSelected
-                                            ? "border-primary/40 bg-primary/10 font-medium text-primary"
-                                            : "border-transparent text-muted-foreground hover:border-border hover:text-foreground")
-                                    }
-                                >
-                                    {c.name}
-                                    <span className="ml-1 tabular-nums opacity-60">
-                                        {count}
-                                    </span>
-                                </button>
-                            );
-                        })}
+                    {categories.map((c) => {
+                        const isSelected = category === c.slug;
+                        return (
+                            <button
+                                key={c.slug}
+                                type="button"
+                                onClick={() => handleCategoryClick(c.slug)}
+                                aria-current={isSelected ? "page" : undefined}
+                                className={
+                                    "shrink-0 rounded-full border px-3 py-1.5 text-sm transition-colors " +
+                                    (isSelected
+                                        ? "border-primary/40 bg-primary/10 font-medium text-primary"
+                                        : "border-transparent text-muted-foreground hover:border-border hover:text-foreground")
+                                }
+                            >
+                                {c.name}
+                            </button>
+                        );
+                    })}
                 </nav>
             </div>
 
@@ -234,8 +224,6 @@ export function BlogListing({
                         </span>
                     )}
                     {debouncedSearch && <span>Search: “{debouncedSearch}”</span>}
-                    <span aria-hidden>·</span>
-                    <span>{data.total} articles</span>
                     {isPending && <Loader2 className="size-3.5 animate-spin text-primary" />}
                     <button
                         type="button"
@@ -289,7 +277,7 @@ export function BlogListing({
                     </>
                 )}
 
-                {data.totalPages > 1 && (
+                {showPagination && (
                     <nav
                         aria-label="Pagination"
                         className="mt-10 flex items-center justify-center gap-6 border-t border-border pt-8 text-sm"
@@ -311,13 +299,9 @@ export function BlogListing({
                             Page{" "}
                             <span className="tabular-nums text-foreground">
                                 {page}
-                            </span>{" "}
-                            of{" "}
-                            <span className="tabular-nums">
-                                {data.totalPages}
                             </span>
                         </span>
-                        {page < data.totalPages ? (
+                        {data.hasMore ? (
                             <button
                                 type="button"
                                 onClick={() => handlePageChange(page + 1)}
