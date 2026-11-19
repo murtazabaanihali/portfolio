@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ExternalLink, Loader } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,27 +22,23 @@ export function ProjectDetail({ slug }: ProjectDetailProps) {
         <div className="container mx-auto px-4 max-w-4xl">
             {isLoading ? (
                 <div className="flex justify-center p-6 pt-40">
-                    <Loader size={48} className="animate-spin" />
+                    <Loader2 className="size-10 animate-spin text-muted-foreground" />
                 </div>
             ) : !project ? (
                 <Custom404 />
             ) : (
                 <>
                     <div className="mb-8 mt-12">
-                        <div className="mb-5 group inline-block cursor-pointer">
-                            <Link
-                                href="/projects"
-                                className="flex gap-2 items-center text-sm font-medium"
-                            >
-                                <ArrowLeft className="h-4 w-4" />
+                        <Button asChild variant="ghost" size="sm" className="mb-4 -ml-3">
+                            <Link href="/projects">
+                                <ArrowLeft className="mr-2 h-4 w-4" />
                                 Back to Projects
                             </Link>
-                            <div className="w-full h-0.5 bg-foreground rounded-full group-hover:opacity-100 opacity-0 transition-opacity" />
-                        </div>
-                        <h1 className="text-4xl md:text-5xl font-bold mb-4">
+                        </Button>
+                        <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-3">
                             {project.title}
                         </h1>
-                        <p className="text-xl text-muted-foreground">
+                        <p className="text-lg sm:text-xl text-muted-foreground">
                             {project.shortDescription}
                         </p>
                     </div>
@@ -61,7 +57,7 @@ export function ProjectDetail({ slug }: ProjectDetailProps) {
                                     <CardTitle>Project Overview</CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <div className="text-lg max-w-none">
+                                    <div className="text-base sm:text-lg leading-relaxed space-y-4">
                                         <div
                                             dangerouslySetInnerHTML={{
                                                 __html: project.description,
@@ -112,7 +108,7 @@ export function ProjectDetail({ slug }: ProjectDetailProps) {
                                         <Button
                                             variant="outline"
                                             asChild
-                                            className="w-full bg-transparent"
+                                            className="w-full"
                                         >
                                             <a
                                                 href={project.githubUrl}

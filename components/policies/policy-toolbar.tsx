@@ -37,7 +37,7 @@ export function PolicyToolbar() {
         aria-hidden="true"
       >
         <div
-          className="h-full bg-gradient-to-r from-primary to-purple-500 transition-[width] duration-150 ease-out"
+          className="h-full bg-primary transition-[width] duration-150 ease-out"
           style={{ width: `${scrollProgress}%` }}
         />
       </div>
@@ -52,10 +52,10 @@ export function PolicyToolbar() {
       >
         <Button
           size="icon"
-          variant="secondary"
+          variant="outline"
           onClick={scrollToTop}
           aria-label="Scroll to top"
-          className="rounded-full shadow-lg border border-border/80 bg-background/90 backdrop-blur-md hover:bg-muted text-foreground size-10"
+          className="shadow-md"
         >
           <ChevronUp className="h-5 w-5" />
         </Button>

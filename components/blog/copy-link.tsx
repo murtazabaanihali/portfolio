@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Check, Link2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export function CopyLink({
   url,
@@ -23,11 +24,13 @@ export function CopyLink({
   };
 
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="sm"
       onClick={copy}
       aria-live="polite"
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
+      className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground"
     >
       {copied ? (
         <Check className="size-3.5 text-primary" />
@@ -35,6 +38,6 @@ export function CopyLink({
         <Link2 className="size-3.5" />
       )}
       {copied ? "Copied" : label}
-    </button>
+    </Button>
   );
 }

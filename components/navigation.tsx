@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NAVIGATION_ITEMS } from "@/components/constant";
-import { cn } from "@/lib/utils";
 
 export function Navigation() {
     const [currentHash, setCurrentHash] = useState("");
@@ -26,7 +25,11 @@ export function Navigation() {
 
     const isActive = (href: string) => {
         const full = pathname + currentHash;
-        return href === full || (href === "/" && pathname === "/" && !currentHash) || (href === "/blog" && pathname.startsWith("/blog/"));
+        return (
+            href === full ||
+            (href === "/" && pathname === "/" && !currentHash) ||
+            (href === "/blog" && pathname.startsWith("/blog/"))
+        );
     };
 
     useEffect(() => {
@@ -37,65 +40,53 @@ export function Navigation() {
 
     return (
         <header className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-4xl px-4">
-            <nav
-                className={cn(
-                    "transition-all duration-300 rounded-2xl backdrop-blur-md bg-muted/70 border border-border shadow-lg"
-                )}
-            >
-                <div className="flex items-center justify-between px-6 py-3">
+            <nav className="rounded-full border border-border bg-background/80 backdrop-blur-md shadow-sm">
+                <div className="flex items-center justify-between px-4 sm:px-6 py-2.5">
                     <Link
                         href="/"
-                        className="text-xl font-bold bg-gradient-to-r from-primary to-foreground bg-clip-text text-transparent"
+                        className="text-base sm:text-lg font-bold tracking-tight text-foreground transition-colors hover:text-foreground/80"
                     >
                         Murtaza Baanihali
                     </Link>
-                    <div className="hidden md:flex items-center space-x-1">
+                    <div className="hidden md:flex items-center gap-1">
                         {NAVIGATION_ITEMS.map((item) => (
-                            <Link
+                            <Button
                                 key={item.name}
-                                href={item.href}
+                                asChild
+                                variant={isActive(item.href) ? "secondary" : "ghost"}
+                                size="sm"
                                 onClick={onClick}
-                                className={cn(
-                                    "px-4 py-2 rounded-lg text-sm font-medium transition-all",
-                                    isActive(item.href)
-                                        ? "text-foreground bg-muted/50"
-                                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                                )}
                             >
-                                {item.name}
-                            </Link>
+                                <Link href={item.href}>{item.name}</Link>
+                            </Button>
                         ))}
-                        <div className="ml-2">
+                        <div className="ml-1 pl-1 border-l border-border">
                             <ThemeToggle />
                         </div>
                     </div>
-                    <div className="md:hidden flex items-center gap-2">
+                    <div className="md:hidden flex items-center gap-1">
                         <ThemeToggle />
                         <Sheet open={isOpen} onOpenChange={setIsOpen}>
                             <SheetTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                    <Menu className="h-5 w-5" />
+                                <Button variant="ghost" size="icon" aria-label="Open menu">
+                                    <Menu className="size-5" />
                                 </Button>
                             </SheetTrigger>
                             <SheetContent side="right" className="w-[280px]">
-                                <div className="flex flex-col space-y-4 mt-8">
+                                <div className="flex flex-col space-y-2 mt-8">
                                     {NAVIGATION_ITEMS.map((item) => (
-                                        <Link
+                                        <Button
                                             key={item.name}
-                                            href={item.href}
+                                            asChild
+                                            variant={isActive(item.href) ? "secondary" : "ghost"}
+                                            className="w-full justify-start text-base"
                                             onClick={() => {
                                                 onClick();
                                                 setIsOpen(false);
                                             }}
-                                            className={cn(
-                                                "px-4 py-3 rounded-lg text-lg font-medium transition-colors",
-                                                isActive(item.href)
-                                                    ? "bg-primary/10 text-primary"
-                                                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                                            )}
                                         >
-                                            {item.name}
-                                        </Link>
+                                            <Link href={item.href}>{item.name}</Link>
+                                        </Button>
                                     ))}
                                 </div>
                             </SheetContent>
