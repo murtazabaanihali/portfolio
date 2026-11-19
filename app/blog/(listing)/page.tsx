@@ -47,21 +47,21 @@ export default async function Blog({
   });
 
   return (
-    <main className="mx-auto max-w-3xl px-5 pb-24 pt-28 sm:px-8">
+    <main className="mx-auto max-w-4xl px-5 pb-24 pt-28 sm:px-8">
       <header className="pb-8">
         <div className="flex items-center justify-between gap-6">
-          <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-4xl">
+          {/* <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-4xl">
             Writing
-          </h1>
+          </h1> */}
           <a
             href="/blog/rss.xml"
-            className="text-sm text-muted-foreground transition-colors hover:text-primary"
+            className="text-sm text-muted-foreground transition-colors hover:text-primary hidden"
             title="RSS feed"
           >
             RSS
           </a>
         </div>
-        <p className="mt-3 text-muted-foreground">
+        <p className="mt-3 text-lg sm:text-2xl font-medium">
           Articles on engineering, building products, and the realities of
           running software businesses.
         </p>

@@ -26,6 +26,8 @@ import {
 } from "../../../lib/blog/contract";
 import { MANIFEST_KEY, HEAD_KEY, LOCK_KEY } from "../../../lib/blog/config";
 
+process.env.NODE_ENV = "test";
+delete process.env.DATABASE_URL;
 process.env.NEXT_PUBLIC_APP_URL = "https://portfolio.example.com";
 process.env.NEXT_PUBLIC_MEDIA_CDN_DOMAIN = "https://content.example.com";
 

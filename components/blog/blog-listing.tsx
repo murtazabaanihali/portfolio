@@ -150,7 +150,7 @@ export function BlogListing({
 
     return (
         <div ref={containerRef}>
-            <div className="flex flex-col gap-3 border-y border-border py-4">
+            <div className="flex flex-col gap-3 border-border py-4">
                 <div className="relative w-full sm:max-w-xs">
                     <Search
                         aria-hidden
@@ -178,7 +178,7 @@ export function BlogListing({
 
                 <nav
                     aria-label="Blog categories"
-                    className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none]"
+                    className="-mx-1 flex gap-1.5 flex-wrap px-1 pb-0.5 [scrollbar-width:none]"
                 >
                     <button
                         type="button"

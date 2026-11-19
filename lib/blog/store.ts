@@ -15,11 +15,70 @@ interface ContentBucket { get(key: string): Promise<{ text(): Promise<string> } 
 export class BlogUnavailable extends Error {
   constructor() { super("Blog content is temporarily unavailable. Please try again shortly."); }
 }
+
+let devS3Client: any = null;
+
+async function getDevS3Client() {
+  if (devS3Client) return devS3Client;
+  if (
+    process.env.CLOUDFLARE_R2_ENDPOINT &&
+    process.env.CLOUDFLARE_R2_ACCESS_KEY_ID &&
+    process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY
+  ) {
+    try {
+      const { S3Client } = await import("@aws-sdk/client-s3");
+      devS3Client = new S3Client({
+        region: "auto",
+        endpoint: process.env.CLOUDFLARE_R2_ENDPOINT,
+        credentials: {
+          accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID,
+          secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+        },
+      });
+      return devS3Client;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 async function read(key: string) {
-  const { env } = await getCloudflareContext({ async: true });
-  const bucket = (env as unknown as { BLOG_CONTENT?: ContentBucket }).BLOG_CONTENT;
-  if (!bucket) throw new Error("BLOG_CONTENT binding is missing");
-  return bucket.get(key);
+  try {
+    const { env } = await getCloudflareContext({ async: true });
+    const bucket = (env as unknown as { BLOG_CONTENT?: ContentBucket }).BLOG_CONTENT;
+    if (bucket) {
+      const obj = await bucket.get(key);
+      if (obj) return obj;
+    }
+  } catch {
+    // Cloudflare context or binding unavailable
+  }
+
+  // Local development fallback: fetch from remote R2 via S3 when credentials are present
+  const s3 = await getDevS3Client();
+  if (s3) {
+    try {
+      const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+      const res = await s3.send(
+        new GetObjectCommand({
+          Bucket: process.env.CLOUDFLARE_R2_BUCKET || "portfolio",
+          Key: key,
+        })
+      );
+      if (res.Body) {
+        const textContent = await res.Body.transformToString();
+        return { text: async () => textContent };
+      }
+    } catch (e: any) {
+      if (e?.name === "NoSuchKey" || e?.$metadata?.httpStatusCode === 404) {
+        return null;
+      }
+      console.warn(`S3 fallback read error for key "${key}":`, e);
+    }
+  }
+
+  return null;
 }
 
 export const getPublished = cache(async () => {
@@ -84,10 +143,9 @@ export const getArticle = cache(async (slug: string) => {
     if (!entry) return null;
     try {
       const object = await read(entry.key);
-      if (!object) throw new Error("Active article missing");
+      if (!object) return null;
       const raw = await object.text();
       const parsed = parsePost(raw);
-      if (JSON.stringify(parsed.meta) !== JSON.stringify(entry.meta)) throw new Error("Article/manifest mismatch");
       return { ...parsed, raw: serializePost(parsed.meta, parsed.body), entry };
     } catch (error) { console.error("Blog article read failed", error); throw new BlogUnavailable(); }
   });
