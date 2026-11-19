@@ -739,3 +739,299 @@ cover:
     }
   });
 });
+
+describe("BlogService.updatePost and updatePostBulk", () => {
+  test("updates title, description, category, and tags without re-uploading file", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-test-update-fields-"));
+    try {
+      const coverBuffer = await sharp({
+        create: {
+          width: 800,
+          height: 450,
+          channels: 4,
+          background: { r: 10, g: 20, b: 30, alpha: 1 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      await writeFile(join(temp, "cover.png"), coverBuffer);
+      const originalMd = `---
+version: 1
+title: "Original Post Title Here"
+slug: test-update-post
+description: "Original long substantive description that meets character limit requirements."
+author: Murtaza Baanihali
+status: published
+category: engineering
+tags:
+  - original
+publishedAt: 2024-01-01T00:00:00Z
+updatedAt: 2024-01-01T00:00:00Z
+cover:
+  src: "./cover.png"
+  alt: "Original cover alt"
+---
+
+## Body Header
+
+This is the original body markdown that must be preserved.
+`;
+      await writeFile(join(temp, "post.md"), originalMd);
+
+      const storage = new MemoryStorage();
+      const service = new BlogService(storage);
+
+      await service.publish(join(temp, "post.md"), { compress: false });
+
+      // Now update fields only
+      const updateResult = await service.updatePost("test-update-post", {
+        title: "Updated Brand New Title Here",
+        description: "Updated brand new long description that meets character limits easily.",
+        category: "ai-agents",
+        tags: ["machine-learning", "agents"],
+      });
+
+      expect(updateResult.success).toBe(true);
+      expect(updateResult.title).toBe("Updated Brand New Title Here");
+
+      // Verify manifest
+      const manifest = await service.manifest();
+      const post = manifest.posts.find((p) => p.meta.slug === "test-update-post");
+      expect(post).toBeDefined();
+      expect(post!.meta.title).toBe("Updated Brand New Title Here");
+      expect(post!.meta.description).toBe(
+        "Updated brand new long description that meets character limits easily.",
+      );
+      expect(post!.meta.category).toBe("ai-agents");
+      expect(post!.meta.tags).toEqual(["agents", "machine-learning"]);
+      expect(post!.meta.publishedAt).toBe("2024-01-01T00:00:00Z"); // preserved!
+      expect(post!.meta.updatedAt).not.toBe("2024-01-01T00:00:00Z"); // updated!
+
+      // Verify body is intact in R2
+      const stored = await storage.get(post!.key);
+      const parsed = parsePost(text(stored!), true);
+      expect(parsed.body).toContain(
+        "This is the original body markdown that must be preserved.",
+      );
+    } finally {
+      await rm(temp, { recursive: true });
+    }
+  });
+
+  test("updates post content with new .md file and new cover image", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-test-update-content-"));
+    try {
+      const coverBuffer1 = await sharp({
+        create: {
+          width: 600,
+          height: 400,
+          channels: 4,
+          background: { r: 50, g: 50, b: 50, alpha: 1 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      const coverBuffer2 = await sharp({
+        create: {
+          width: 1200,
+          height: 675,
+          channels: 4,
+          background: { r: 100, g: 150, b: 200, alpha: 1 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      await writeFile(join(temp, "cover.png"), coverBuffer1);
+      await writeFile(join(temp, "new-cover.png"), coverBuffer2);
+
+      const post1 = `---
+version: 1
+title: "First Draft Title"
+slug: dynamic-update-content
+description: "Initial substantive description that meets the required length limits."
+author: Murtaza Baanihali
+status: published
+category: engineering
+tags:
+  - draft
+publishedAt: 2024-02-01T00:00:00Z
+updatedAt: 2024-02-01T00:00:00Z
+cover:
+  src: "./cover.png"
+  alt: "First cover"
+---
+
+## Introduction
+
+This is the initial substantive article body that is long enough to satisfy requirements.
+`;
+      await writeFile(join(temp, "post1.md"), post1);
+
+      const storage = new MemoryStorage();
+      const service = new BlogService(storage);
+
+      await service.publish(join(temp, "post1.md"), { compress: false });
+
+      // Create revised post markdown file
+      const post2 = `---
+version: 1
+title: "Revised Second Draft"
+slug: dynamic-update-content
+description: "Completely revised substantive description that explains everything clearly."
+author: Murtaza Baanihali
+status: published
+category: developer-experience
+tags:
+  - revised
+publishedAt: null
+updatedAt: null
+cover:
+  src: "./cover.png"
+  alt: "Second cover alt text"
+---
+
+## Comprehensive Revision
+
+Completely overhauled article body with new technical deep dives and full explanations.
+`;
+      await writeFile(join(temp, "post2.md"), post2);
+
+      // Update using --file and --cover with compression
+      const updateResult = await service.updatePost(
+        "dynamic-update-content",
+        {
+          file: join(temp, "post2.md"),
+          cover: join(temp, "new-cover.png"),
+          coverAlt: "Brand new high-res cover alt text",
+        },
+        { compress: true },
+      );
+
+      expect(updateResult.success).toBe(true);
+      expect(updateResult.cover).toBe("blog/posts/dynamic-update-content/cover.webp");
+
+      // Verify stored cover in R2 is WebP
+      const storedCover = await storage.get(
+        "blog/posts/dynamic-update-content/cover.webp",
+      );
+      expect(storedCover).not.toBeNull();
+      expect(imageType(storedCover!.bytes)).toBe("image/webp");
+
+      // Verify stored body in R2 has updated content
+      const storedPost = await storage.get(updateResult.contentKey);
+      const parsed = parsePost(text(storedPost!), true);
+      expect(parsed.body).toContain("Completely overhauled article body");
+      expect(parsed.meta.title).toBe("Revised Second Draft");
+      expect(parsed.meta.cover.alt).toBe("Brand new high-res cover alt text");
+      expect(parsed.meta.publishedAt).toBe("2024-02-01T00:00:00Z"); // retained!
+    } finally {
+      await rm(temp, { recursive: true });
+    }
+  });
+
+  test("updatePostBulk updates multiple posts in a single batch and handles errors", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-test-bulk-update-"));
+    try {
+      const coverBuffer = await sharp({
+        create: {
+          width: 800,
+          height: 450,
+          channels: 4,
+          background: { r: 20, g: 40, b: 60, alpha: 1 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      await writeFile(join(temp, "cover.png"), coverBuffer);
+
+      const postA = `---
+version: 1
+title: "Article Alpha Initial"
+slug: article-alpha
+description: "Initial description for article alpha that meets all requirements."
+author: Murtaza Baanihali
+status: published
+category: engineering
+tags:
+  - alpha
+publishedAt: 2024-01-10T00:00:00Z
+updatedAt: 2024-01-10T00:00:00Z
+cover:
+  src: "./cover.png"
+  alt: "Cover Alpha"
+---
+
+## Introduction Alpha
+
+Body of article Alpha that contains enough characters to satisfy the minimum body length requirement.
+`;
+      const postB = `---
+version: 1
+title: "Article Beta Initial"
+slug: article-beta
+description: "Initial description for article beta that meets all requirements."
+author: Murtaza Baanihali
+status: published
+category: engineering
+tags:
+  - beta
+publishedAt: 2024-01-11T00:00:00Z
+updatedAt: 2024-01-11T00:00:00Z
+cover:
+  src: "./cover.png"
+  alt: "Cover Beta"
+---
+
+## Introduction Beta
+
+Body of article Beta that contains enough characters to satisfy the minimum body length requirement.
+`;
+      await writeFile(join(temp, "postA.md"), postA);
+      await writeFile(join(temp, "postB.md"), postB);
+
+      const storage = new MemoryStorage();
+      const service = new BlogService(storage);
+
+      await service.publishBulk([
+        { file: join(temp, "postA.md") },
+        { file: join(temp, "postB.md") },
+      ]);
+
+      // Bulk update Alpha and Beta, plus a non-existent Gamma
+      const bulkResult = await service.updatePostBulk([
+        {
+          slug: "article-alpha",
+          title: "Article Alpha Renamed",
+          description: "New alpha description that passes all validation rules with ease.",
+        },
+        {
+          slug: "article-beta",
+          title: "Article Beta Renamed",
+          category: "cloud-performance",
+        },
+        {
+          slug: "article-gamma-does-not-exist",
+          title: "Non-existent Gamma Title",
+        },
+      ]);
+
+      expect(bulkResult.total).toBe(3);
+      expect(bulkResult.updated).toBe(2);
+      expect(bulkResult.failed).toBe(1);
+
+      const manifest = await service.manifest();
+      const alpha = manifest.posts.find((p) => p.meta.slug === "article-alpha");
+      const beta = manifest.posts.find((p) => p.meta.slug === "article-beta");
+
+      expect(alpha!.meta.title).toBe("Article Alpha Renamed");
+      expect(beta!.meta.title).toBe("Article Beta Renamed");
+      expect(beta!.meta.category).toBe("cloud-performance");
+    } finally {
+      await rm(temp, { recursive: true });
+    }
+  });
+});

@@ -11,6 +11,8 @@ import {
 import {
   headSchema,
   manifestSchema,
+  postSchema,
+  normalizeTag,
   parsePost,
   serializePost,
   rewriteImageUrls,
@@ -70,6 +72,56 @@ export type BulkPublishResult = {
         error: string;
       }
   >;
+};
+
+export type UpdatePostItem = {
+  slug: string;
+  title?: string;
+  description?: string;
+  file?: string;
+  cover?: string;
+  coverAlt?: string;
+  category?: string;
+  tags?: string[] | string;
+  author?: string;
+  compress?: boolean;
+};
+
+export type UpdatePostOptions = {
+  compress?: boolean;
+  maxWidth?: number;
+  quality?: number;
+};
+
+export type BulkUpdateResult = {
+  total: number;
+  updated: number;
+  failed: number;
+  results: Array<
+    | {
+        slug: string;
+        title: string;
+        url: string;
+        contentKey: string;
+        cover: string;
+        status: "ok";
+      }
+    | {
+        slug: string;
+        status: "failed";
+        error: string;
+      }
+  >;
+};
+
+export type UpdateResult = {
+  success: true;
+  slug: string;
+  title: string;
+  url: string;
+  contentKey: string;
+  cover: string;
+  assets: string[];
 };
 
 /** Scan a directory for post.md files or article subdirectories. */
@@ -591,6 +643,267 @@ export class BlogService {
 
     const manifest = await this.manifest(true);
     const entry = manifest.posts.find((p) => p.meta.slug === first.slug);
+
+    return {
+      success: true,
+      slug: first.slug,
+      title: first.title,
+      url: first.url,
+      contentKey: first.contentKey,
+      cover: first.cover,
+      assets: (entry?.assets as string[]) || [],
+    };
+  }
+
+  /**
+   * Update existing blog post(s) in bulk under a single atomic lock.
+   * Can edit: title, description, markdown body (.md file), cover image, cover alt, category, tags, author.
+   * Automatically compresses new cover or inline images to WebP if compress is enabled.
+   */
+  async updatePostBulk(
+    items: UpdatePostItem[],
+    options?: UpdatePostOptions,
+  ): Promise<BulkUpdateResult> {
+    if (!items.length) {
+      return { total: 0, updated: 0, failed: 0, results: [] };
+    }
+
+    const lockOwner = await this.acquireLock();
+    try {
+      const manifest = await this.manifest(true);
+      const manifestPostsMap = new Map<string, Entry>(
+        manifest.posts.map((p) => [p.meta.slug, p]),
+      );
+      const results: BulkUpdateResult["results"] = [];
+      const now = new Date().toISOString();
+
+      for (const item of items) {
+        try {
+          const slug = item.slug;
+          const existing = manifestPostsMap.get(slug);
+          if (!existing) {
+            throw new Error(`Post "${slug}" not found in published manifest`);
+          }
+
+          const shouldCompress = item.compress ?? options?.compress ?? true;
+          const compressOpts: CompressOptions | undefined = shouldCompress
+            ? {
+                maxWidth: options?.maxWidth,
+                quality: options?.quality,
+              }
+            : undefined;
+
+          let rawBody: string;
+          let baseMeta: Post = { ...existing.meta };
+          const assets = new Set<string>(existing.assets || []);
+
+          // 1. If new markdown file is provided, read and parse it
+          if (item.file) {
+            const rawContent = await readFile(item.file, "utf8");
+            const parsed = parsePost(rawContent, true);
+            rawBody = parsed.body;
+            baseMeta = {
+              ...baseMeta,
+              ...parsed.meta,
+              slug,
+            };
+            const baseDir = dirname(item.file);
+
+            // Resolve inline images if any
+            const inlineImages = await readInlineImages(baseDir, rawBody);
+            const urlMap = new Map<string, string>();
+
+            for (const [src, img] of Object.entries(inlineImages)) {
+              if (shouldCompress) {
+                const compressed = await compressImage(img.bytes, compressOpts);
+                const baseFilename = img.filename.replace(/\.[^.]+$/, "");
+                const newFilename = `${baseFilename}${compressed.ext}`;
+                const assetKey = `blog/posts/${slug}/images/${newFilename}`;
+                await this.storage.put(
+                  assetKey,
+                  compressed.bytes,
+                  compressed.type,
+                );
+                urlMap.set(src, cdnUrl(assetKey));
+                assets.add(assetKey);
+              } else {
+                const assetKey = `blog/posts/${slug}/images/${img.filename}`;
+                await this.storage.put(assetKey, img.bytes, img.type);
+                urlMap.set(src, cdnUrl(assetKey));
+                assets.add(assetKey);
+              }
+            }
+
+            rawBody = rewriteImageUrls(rawBody, urlMap);
+          } else {
+            // Read existing markdown body from R2
+            const stored = await this.storage.get(existing.key);
+            if (!stored) {
+              throw new Error(
+                `Content key "${existing.key}" not found in storage`,
+              );
+            }
+            const parsed = parsePost(text(stored), true);
+            rawBody = parsed.body;
+          }
+
+          // 2. Resolve cover image update if provided
+          let coverKey = baseMeta.cover.src;
+          const coverAlt = item.coverAlt ?? baseMeta.cover.alt;
+
+          if (item.cover) {
+            const coverPath = item.cover;
+            const isLocal =
+              coverPath.startsWith("./") ||
+              (!coverPath.startsWith("https://") &&
+                !coverPath.startsWith("blog/posts/"));
+
+            if (isLocal) {
+              const rawCoverBytes = await readFile(coverPath);
+              const rawMime = imageType(rawCoverBytes);
+
+              if (shouldCompress) {
+                const compressed = await compressImage(
+                  rawCoverBytes,
+                  compressOpts,
+                );
+                coverKey = `blog/posts/${slug}/cover${compressed.ext}`;
+                await this.storage.put(
+                  coverKey,
+                  compressed.bytes,
+                  compressed.type,
+                );
+              } else {
+                const ext =
+                  extname(coverPath).toLowerCase() ||
+                  (rawMime === "image/jpeg"
+                    ? ".jpg"
+                    : "." + rawMime.split("/")[1]);
+                coverKey = `blog/posts/${slug}/cover${ext}`;
+                await this.storage.put(coverKey, rawCoverBytes, rawMime);
+              }
+              assets.add(coverKey);
+            } else {
+              coverKey = item.cover;
+            }
+          }
+
+          // 3. Process tags if provided
+          let tags = baseMeta.tags;
+          if (item.tags !== undefined) {
+            const rawTags = Array.isArray(item.tags)
+              ? item.tags
+              : item.tags
+                  .split(",")
+                  .map((t) => t.trim())
+                  .filter(Boolean);
+            tags = [...new Set(rawTags.map(normalizeTag))].sort();
+          }
+
+          // 4. Construct updated Post metadata
+          const updatedMeta: Post = postSchema.parse({
+            version: 1,
+            title: item.title ?? baseMeta.title,
+            slug,
+            description: item.description ?? baseMeta.description,
+            author: item.author ?? baseMeta.author,
+            status: "published",
+            category: item.category ?? baseMeta.category,
+            tags,
+            publishedAt: existing.meta.publishedAt,
+            updatedAt: now,
+            cover: {
+              src: coverKey,
+              alt: coverAlt,
+            },
+          });
+
+          // 5. Serialize and store updated post.md in R2
+          const finalMarkdown = serializePost(updatedMeta, rawBody);
+          await this.storage.put(
+            existing.key,
+            bytes(finalMarkdown),
+            "text/markdown; charset=utf-8",
+          );
+
+          // 6. Update manifest entry
+          const updatedEntry: Entry = {
+            meta: updatedMeta,
+            key: existing.key,
+            revision: hash(finalMarkdown),
+            assets: Array.from(assets).sort(),
+          };
+
+          manifestPostsMap.set(slug, updatedEntry);
+
+          // 7. Update database mirror
+          await syncPostToDb(updatedEntry);
+
+          results.push({
+            slug,
+            title: updatedMeta.title,
+            url: siteUrl(`/blog/${slug}`),
+            contentKey: existing.key,
+            cover: coverKey,
+            status: "ok",
+          });
+        } catch (err) {
+          results.push({
+            slug: item.slug,
+            status: "failed",
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      // Write updated manifest
+      const updatedPosts = Array.from(manifestPostsMap.values()).sort(
+        (a, b) =>
+          Date.parse(b.meta.publishedAt!) - Date.parse(a.meta.publishedAt!) ||
+          a.meta.slug.localeCompare(b.meta.slug),
+      );
+
+      const newManifest: Manifest = {
+        version: 1,
+        posts: updatedPosts,
+      };
+
+      manifestSchema.parse(newManifest);
+      await this.storage.put(
+        MANIFEST_KEY,
+        bytes(JSON.stringify(newManifest, null, 2)),
+        "application/json",
+      );
+
+      const updatedCount = results.filter((r) => r.status === "ok").length;
+      return {
+        total: items.length,
+        updated: updatedCount,
+        failed: items.length - updatedCount,
+        results,
+      };
+    } finally {
+      await this.releaseLock(lockOwner);
+    }
+  }
+
+  /**
+   * Update a single blog post directly.
+   */
+  async updatePost(
+    slug: string,
+    updates: Omit<UpdatePostItem, "slug">,
+    options?: UpdatePostOptions,
+  ): Promise<UpdateResult> {
+    const bulk = await this.updatePostBulk([{ slug, ...updates }], options);
+    const first = bulk.results[0];
+
+    if (!first || first.status === "failed") {
+      throw new Error(first ? first.error : `Update failed for "${slug}"`);
+    }
+
+    const manifest = await this.manifest(true);
+    const entry = manifest.posts.find((p) => p.meta.slug === slug);
 
     return {
       success: true,

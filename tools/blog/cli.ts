@@ -5,6 +5,7 @@ import {
   BlogService,
   findPostsInDir,
   type BulkPublishItem,
+  type UpdatePostItem,
 } from "./core";
 import { R2Storage, Conflict } from "./storage";
 import { migrateBlogs } from "./migrate";
@@ -18,6 +19,9 @@ Commands:
   publish <directory>                    Bulk publish all posts found in a directory
   publish --batch <batch.json>           Bulk publish from a JSON array of files
   publish-batch <batch.json>             Alias for bulk publish from batch JSON
+  update <slug> [options]                Update an existing published post (title, desc, .md file, cover, etc.)
+  update --batch <batch.json>            Bulk update posts from a JSON batch file
+  update-batch <batch.json>              Alias for bulk update from batch JSON
   compress <file-or-dir>                 Compress image(s) to WebP using sharp with responsive width (max 1000px, q70)
   list                                   List all published posts
   unpublish <slug> --yes                 Unpublish a post (removes from manifest)
@@ -28,7 +32,15 @@ Commands:
   unlock [owner] --yes [--force]         Release publishing lock
 
 Options:
-  --no-compress                          Disable automatic image compression when publishing
+  --title <string>                       Update post title
+  --desc, --description <string>         Update post description
+  --file <path>                          Update post content with new Markdown file
+  --cover <path-or-url>                  Update cover image (auto-compressed to WebP)
+  --cover-alt <string>                   Update cover image alt text
+  --category <slug>                      Update post category
+  --tags <tag1,tag2>                     Update post tags (comma-separated)
+  --author <string>                      Update post author
+  --no-compress                          Disable automatic image compression when publishing/updating
   --quality <1-100>                      Compression quality (default: 70)
   --max-width <px>                       Maximum image width in pixels (default: 1000)
   --out <path>                           Output path for single file compression
@@ -41,6 +53,15 @@ Examples:
   # Compress an image standalone:
   bun run blog compress ./image.jpg
   bun run blog compress ./my-article/
+
+  # Update single post fields:
+  bun run blog update my-post --title "New Title" --desc "Updated description"
+  bun run blog update my-post --file ./updated-post.md
+  bun run blog update my-post --cover ./new-cover.jpg --cover-alt "Fresh illustration"
+
+  # Bulk update via batch JSON:
+  bun run blog update --batch ./update-batch.json
+  # update-batch.json format: [{ "slug": "my-post", "title": "New Title" }]
 
   # Bulk publish multiple files:
   bun run blog publish ./post1.md ./post2.md ./post3.md
@@ -66,6 +87,14 @@ async function main() {
       yes: { type: "boolean" },
       "dry-run": { type: "boolean" },
       cover: { type: "string" },
+      "cover-alt": { type: "string" },
+      title: { type: "string" },
+      desc: { type: "string" },
+      description: { type: "string" },
+      file: { type: "string" },
+      category: { type: "string" },
+      tags: { type: "string" },
+      author: { type: "string" },
       batch: { type: "string" },
       force: { type: "boolean" },
       help: { type: "boolean" },
@@ -167,6 +196,66 @@ async function main() {
       result = bulkResult;
       if (bulkResult.failed > 0) {
         process.exitCode = 1;
+      }
+      break;
+    }
+
+    case "update-batch":
+    case "update": {
+      const updateOpts = {
+        compress: options["no-compress"] ? false : true,
+        maxWidth: options["max-width"]
+          ? parseInt(options["max-width"], 10)
+          : undefined,
+        quality: options.quality ? parseInt(options.quality, 10) : undefined,
+      };
+
+      if (options.batch || command === "update-batch") {
+        const batchFile = options.batch || required(0, "batch json file");
+        const parsed = JSON.parse(await readFile(batchFile, "utf8"));
+        if (!Array.isArray(parsed)) {
+          throw new Error("Batch file must contain a JSON array of updates");
+        }
+        const items: UpdatePostItem[] = parsed.map((item: any) => ({
+          slug: item.slug,
+          title: item.title,
+          description: item.description ?? item.desc,
+          file: item.file,
+          cover: item.cover,
+          coverAlt: item.coverAlt ?? item["cover-alt"],
+          category: item.category,
+          tags: item.tags,
+          author: item.author,
+          compress: item.compress,
+        }));
+        const bulkResult = await service.updatePostBulk(items, updateOpts);
+        result = bulkResult;
+        if (bulkResult.failed > 0) {
+          process.exitCode = 1;
+        }
+      } else {
+        const slug = required(0, "slug to update");
+        const singleUpdates: Omit<UpdatePostItem, "slug"> = {
+          title: options.title,
+          description: options.desc ?? options.description,
+          file: options.file,
+          cover: options.cover,
+          coverAlt: options["cover-alt"],
+          category: options.category,
+          tags: options.tags,
+          author: options.author,
+        };
+
+        const hasUpdates = Object.values(singleUpdates).some(
+          (v) => v !== undefined,
+        );
+        if (!hasUpdates) {
+          throw new Error(
+            "At least one update field must be specified (--title, --desc/--description, --file, --cover, --cover-alt, --category, --tags, --author)",
+          );
+        }
+
+        result = await service.updatePost(slug, singleUpdates, updateOpts);
       }
       break;
     }
