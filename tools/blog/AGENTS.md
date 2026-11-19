@@ -49,6 +49,17 @@ bun run blog publish ./my-articles/
 # Bulk publish from a batch JSON file
 bun run blog publish --batch ./batch.json
 
+# Update an existing published post (title, desc, .md file, cover image, category, tags, cover alt):
+bun run blog update my-post-slug --title "Updated Title"
+bun run blog update my-post-slug --desc "Updated description"
+bun run blog update my-post-slug --file ./updated-post.md
+bun run blog update my-post-slug --cover ./new-cover.png --cover-alt "Fresh illustration"
+bun run blog update my-post-slug --category ai-agents --tags "agents, workflow"
+
+# Bulk update multiple existing posts from a batch JSON file:
+bun run blog update --batch ./update-batch.json
+# update-batch.json format: [{ "slug": "my-post", "title": "New Title", "desc": "New description" }]
+
 # List all published posts
 bun run blog list
 

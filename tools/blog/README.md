@@ -73,6 +73,33 @@ bun run blog compress ./path/to/image.jpg
 bun run blog compress ./path/to/my-article/
 ```
 
+### Update Existing Posts (Single or Bulk)
+
+Update any combination of title, description, markdown body, cover image, cover alt text, category, tags, or author without re-publishing from scratch:
+
+```bash
+# Update single post fields:
+bun run blog update my-slug --title "Updated Title"
+bun run blog update my-slug --desc "New description..."
+bun run blog update my-slug --file ./updated-post.md
+bun run blog update my-slug --cover ./new-cover.jpg --cover-alt "New illustration"
+bun run blog update my-slug --category engineering --tags "perf, devops"
+
+# Bulk update via batch JSON:
+bun run blog update --batch ./update-batch.json
+# or:
+bun run blog update-batch ./update-batch.json
+```
+
+Batch JSON format:
+```json
+[
+  { "slug": "my-post-1", "title": "Updated Title", "desc": "New description" },
+  { "slug": "my-post-2", "cover": "./new-cover.png", "coverAlt": "New cover alt text" },
+  { "slug": "my-post-3", "file": "./revised-article.md" }
+]
+```
+
 ### List Published Posts
 
 ```bash
