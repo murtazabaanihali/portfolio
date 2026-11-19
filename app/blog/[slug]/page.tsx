@@ -8,7 +8,8 @@ import rehypeSlug from "rehype-slug";
 import { ArrowLeft } from "lucide-react";
 
 import { CopyLink } from "@/components/blog/copy-link";
-import { getArticle, getPublished, sortedPosts } from "@/lib/blog/store";
+import { getArticle } from "@/lib/blog/store";
+import { getRelatedBlogPosts } from "@/actions";
 import { articleInfo, jsonLd, slugSchema } from "@/lib/blog/contract";
 import {
   categories,
@@ -68,12 +69,7 @@ export default async function Article({ params }: Props) {
     name: p.author,
     ...(p.author === defaultAuthor() ? { url: siteUrl("/#about") } : {}),
   };
-  const { posts } = await getPublished();
-  const related = sortedPosts(
-    posts.filter(
-      (e) => e.meta.slug !== p.slug && e.meta.category === p.category,
-    ),
-  ).slice(0, 3);
+  const related = await getRelatedBlogPosts(p.slug, p.category, 3);
   const data = {
     "@context": "https://schema.org",
     "@graph": [
@@ -282,7 +278,7 @@ export default async function Article({ params }: Props) {
               More in {categoryName(p.category)}
             </h2>
             <div className="mt-6 grid gap-8 sm:grid-cols-3">
-              {related.map(({ meta: r }) => (
+              {related.map((r) => (
                 <article key={r.slug} className="group">
                   <Link href={`/blog/${r.slug}`} className="block">
                     <Image

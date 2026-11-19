@@ -4,6 +4,10 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { HEAD_KEY, MANIFEST_KEY } from "./config";
 import { headSchema, manifestSchema, parsePost, serializePost, type Entry } from "./contract";
 import { withRedisCache } from "@/lib/cache";
+import db from "@/lib/db";
+import { blogPosts } from "@/lib/db/blog-schema";
+import { getBlogPostBySlugDB, blogPostToPost } from "@/lib/db/queries";
+import { eq, desc } from "drizzle-orm";
 
 const BLOG_CACHE_TTL = 7 * 24 * 3600; // 7 days (high TTL)
 
@@ -21,6 +25,26 @@ async function read(key: string) {
 export const getPublished = cache(async () => {
   return withRedisCache("cache:blog:manifest", BLOG_CACHE_TTL, async () => {
     try {
+      const rows = await db.query.blogPosts.findMany({
+        where: eq(blogPosts.status, "published"),
+        orderBy: [desc(blogPosts.publishedAt)],
+      });
+      if (rows && rows.length > 0) {
+        return {
+          version: 1 as const,
+          posts: rows.map(p => ({
+            key: p.contentKey,
+            meta: blogPostToPost(p),
+            revision: p.revision,
+            assets: [] as string[],
+          })),
+        };
+      }
+    } catch (e) {
+      console.warn("DB manifest query failed, falling back to R2 manifest:", e);
+    }
+
+    try {
       const directManifest = await read(MANIFEST_KEY);
       if (directManifest) {
         return manifestSchema.parse(JSON.parse(await directManifest.text()));
@@ -37,6 +61,24 @@ export const getPublished = cache(async () => {
 
 export const getArticle = cache(async (slug: string) => {
   return withRedisCache(`cache:blog:article:${slug}`, BLOG_CACHE_TTL, async () => {
+    try {
+      const dbPost = await getBlogPostBySlugDB(slug);
+      if (dbPost?.contentKey) {
+        const object = await read(dbPost.contentKey);
+        if (object) {
+          const raw = await object.text();
+          const parsed = parsePost(raw);
+          return {
+            meta: dbPost,
+            body: parsed.body,
+            raw,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("DB article lookup failed, falling back to manifest:", e);
+    }
+
     const { posts } = await getPublished();
     const entry = posts.find(p => p.meta.slug === slug);
     if (!entry) return null;
