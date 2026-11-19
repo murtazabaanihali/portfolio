@@ -24,8 +24,8 @@ blog/
         └── cover.webp
 ```
 
-- **`blog/manifest.json`**: Single JSON document listing all published posts, their metadata, content keys, and asset references. Kept fresh with `Cache-Control: no-store`.
-- **`blog/posts/<slug>/`**: Everything related to the post is colocated in one human-readable directory. Covers and inline images are served via the public R2 media CDN (`NEXT_PUBLIC_MEDIA_CDN_DOMAIN`) with `Cache-Control: public, max-age=300`.
+- **`blog/manifest.json`**: Single JSON document listing all published posts, their metadata, content keys, and asset references. Cached with high TTL (`Cache-Control: public, max-age=86400, s-maxage=604800`).
+- **`blog/posts/<slug>/`**: Everything related to the post is colocated in one human-readable directory. Covers and inline images are served via the public R2 media CDN (`NEXT_PUBLIC_MEDIA_CDN_DOMAIN`) with `Cache-Control: public, max-age=604800, immutable`.
 
 ---
 

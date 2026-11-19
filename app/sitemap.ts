@@ -3,11 +3,11 @@ import db from "@/lib/db";
 import { siteUrl } from "@/lib/blog/config";
 import { getPublished } from "@/lib/blog/store";
 import { withRedisCache } from "@/lib/cache";
-export const dynamic = "force-dynamic";
+export const revalidate = 604800; // 7 days (high TTL)
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [projectsResult, blogResult] = await Promise.allSettled([
-    withRedisCache("cache:sitemap:projects", 3600, () =>
+    withRedisCache("cache:sitemap:projects", 7 * 24 * 3600, () =>
       db.query.projects.findMany({ columns: { slug: true, createdAt: true, updatedAt: true } })
     ),
     getPublished(),

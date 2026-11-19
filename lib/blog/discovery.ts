@@ -15,12 +15,22 @@ export function rss(posts: Entry[]) {
 ${posts.map(({ meta: p }) => `<item><title>${xml(p.title)}</title><link>${xml(siteUrl("/blog/" + p.slug))}</link><guid isPermaLink="true">${xml(siteUrl("/blog/" + p.slug))}</guid><description>${xml(p.description)}</description><pubDate>${new Date(p.publishedAt!).toUTCString()}</pubDate><category>${xml(categories.find(c => c.slug === p.category)!.name)}</category></item>`).join("")}
 </channel></rss>`;
 }
+export const CACHE_CONTROL_MAX =
+  "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400";
+
 export const discoveryHeaders = (type: string) => ({
-  "Content-Type": type + "; charset=utf-8", "Cache-Control": "no-store",
+  "Content-Type": type + "; charset=utf-8",
+  "Cache-Control": CACHE_CONTROL_MAX,
   "X-Content-Type-Options": "nosniff",
 });
 export function unavailableResponse() {
   return new Response("Blog temporarily unavailable. Please retry.", {
-    status: 503, headers: { ...discoveryHeaders("text/plain"), "Retry-After": "60" },
+    status: 503,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Retry-After": "60",
+    },
   });
 }

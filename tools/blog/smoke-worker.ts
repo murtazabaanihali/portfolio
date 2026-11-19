@@ -45,9 +45,9 @@ for (const path of paths) {
   if (
     path.startsWith("/blog") &&
     path !== "/blog/local-hidden-draft" &&
-    !response.headers.get("cache-control")?.includes("no-store")
+    response.headers.get("cache-control")?.includes("no-store")
   ) {
-    errors.push("missing no-store");
+    errors.push("unexpected no-store (should be cached)");
   }
 
   if (

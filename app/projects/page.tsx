@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { ProjectsClientSide } from "@/components/projects";
 import { getProjects } from "@/actions";
 
+export const revalidate = 604800; // 7 days (high TTL)
+
 export const metadata: Metadata = {
     title: "Projects",
     description:

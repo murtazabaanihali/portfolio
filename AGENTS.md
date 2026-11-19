@@ -19,7 +19,7 @@ Run from the repository root.
 
 ## Project Map
 
-- `app/` — App Router pages/layouts (portfolio, `/blog`, policies, sitemap, robots). Blog routes use `force-dynamic` and `no-store` on purpose.
+- `app/` — App Router pages/layouts (portfolio, `/blog`, policies, sitemap, robots). Blog routes use ISR and Redis caching with high TTL.
 - `actions/index.ts` — `"use server"` actions (contact email, cached project queries).
 - `components/` — portfolio sections + shadcn/ui primitives (`components/ui/`, configured in `components.json`).
 - `lib/blog/` — shared blog contract used by both the site and `tools/blog` (categories, frontmatter schemas, R2 object layout).
@@ -37,7 +37,7 @@ Run from the repository root.
 - Code style is prettier-like (4-space indent in portfolio code, 2-space in `lib/blog`); match the surrounding file.
 - All blog content changes go through the `bun run blog publish` workflow in `tools/blog/AGENTS.md` — never write directly to R2 or the `blog_posts` table.
 - The blog DB mirror is kept synchronized automatically by `bun run blog publish`.
-- No `Cache Everything`/edge TTL overrides for `/blog*`, `/llms.txt`, or `/sitemap.xml`; blog reader freshness relies on existing cache-control semantics.
+- Edge/browser caching for `/blog*`, `/llms.txt`, and `/sitemap.xml` uses high-TTL Cache-Control and ISR semantics backed by Upstash Redis.
 - Local R2 S3 credentials belong only in local `.env`/`.dev.vars` — never in Wrangler bindings or tracked files.
 
 ## Definition of Done

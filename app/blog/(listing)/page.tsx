@@ -7,7 +7,7 @@ import { PostRow } from "@/components/blog/post-row";
 import { categories, siteUrl } from "@/lib/blog/config";
 import { sortedPosts, getPublished } from "@/lib/blog/store";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 604800; // 7 days (high TTL)
 type Query = { q?: string; category?: string; tag?: string; page?: string };
 
 export async function generateMetadata({
@@ -99,7 +99,7 @@ export default async function Blog({
           </a>
         </div>
         <p className="mt-3 text-muted-foreground">
-          {posts.length} articles on engineering, building products, and the
+          Articles on engineering, building products, and the
           realities of running software businesses.
         </p>
       </header>
