@@ -1,7 +1,7 @@
 import { getPublished, sortedPosts } from "@/lib/blog/store";
 import { defaultAuthor, siteUrl } from "@/lib/blog/config";
 import { discoveryHeaders, unavailableResponse } from "@/lib/blog/discovery";
-export const dynamic = "force-dynamic";
+export const revalidate = 604800; // 7 days (high TTL)
 export async function GET() {
   try {
     const posts = sortedPosts((await getPublished()).posts);

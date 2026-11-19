@@ -48,7 +48,7 @@ export const getProjects = async (pageNumber: number = 1, tag?: ProjectTag) => {
     try {
         const page = Math.max(1, pageNumber);
         const cacheKey = `cache:projects:${page}:${tag || "all"}`;
-        const ttl = 3 * 3600; // 3 hours
+        const ttl = 7 * 24 * 3600; // 7 days (high TTL)
 
         return await withRedisCache(cacheKey, ttl, async () => {
             const projects = await getProjectsDB(page, tag, 12);
@@ -64,7 +64,7 @@ export const getProjects = async (pageNumber: number = 1, tag?: ProjectTag) => {
 export const getProjectBySlug = async (slug: string) => {
     try {
         const cacheKey = `cache:project:${slug}`;
-        const ttl = 3 * 3600; // 3 hours
+        const ttl = 7 * 24 * 3600; // 7 days (high TTL)
 
         return await withRedisCache(cacheKey, ttl, async () => {
             return getProjectBySlugDB(slug);

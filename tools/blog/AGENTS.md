@@ -153,7 +153,7 @@ Here is the system boundary:
 
 ---
 
-## 3. Visual Direction: Cover Images & Placeholders
+## 3. Visual Direction & Cover Generation Pipeline
 
 Every article must have an impressive, high-quality, professional cover image. Content will be provided externally by the working agent.
 
@@ -163,43 +163,79 @@ Do **NOT** generate or accept:
 - **No glowing neon / cyberpunk**: No neon blues, purples, Tron grids, floating digital particles, matrix green rain, or glowing wires.
 - **No sci-fi tropes**: No robot hands touching holograms, glowing cyborg brains in glass spheres, floating VR headsets, or laser circuits.
 - **No generic AI bloat**: No glossy 3D plastic spheres, floating abstract cubes, corporate stock vector people with oversized limbs, or fake UI screenshots with unreadable gibberish text.
+- **No sterile CAD wireframes**: Avoid generic drafting compasses or mechanical diagrams without narrative context.
 
-### Approved Visual Styles (Fresh, Impressive, Professional)
+### Approved Editorial Visual Styles
 
-Choose from one of these clean aesthetic directions:
+Choose from one of these four refined aesthetic directions, inspired by elite publications (*Stripe Press*, *Monocle*, *The New Yorker*, *Bauhaus*):
 
-#### 1. Minimalist Architectural & Technical Ink Drawings
-Clean technical drafting or fine-liner pen sketches. Geometric clarity, subtle cross-hatching, crisp black or dark sepia ink on warm off-white or natural paper texture.
-- **Prompt Formula**:
-  `"Minimalist technical ink line drawing representing [concept/metaphor], fine architectural drafting linework, elegant cross-hatching, crisp monochrome ink on warm cream textured paper, restrained, high-end editorial illustration, no text, 16:9 aspect ratio."`
-- **Example Concepts**:
-  - Cloud infrastructure: Exploded architectural axonometric diagram of interlocking clean stone or paper blocks.
-  - Email deliverability / APIs: Minimalist technical drawing of pneumatic routing tubes or precision envelope calipers.
-  - Databases / indexing: Clean technical cross-section of a library card catalog mechanism or geometric sorting grid.
+#### 1. Stripe Press Risograph & Vintage Technical Manual (Architecture, Cloud, DB, Systems)
+Abstract intellectual book cover; vintage technical manual meets modern indie publishing.
+- **Formula**:
+  `"Stripe Press book cover illustration, risograph print aesthetic, [punchy intellectual metaphor for concept], 2-color spot ink in deep cobalt blue and warm terracotta, halftone stipple shading, subtle ink misregistration, tactile speckled heavy off-white cardstock, retro-futuristic technical minimalism, strong graphic silhouette, generous negative space, no text, 16:9 aspect ratio"`
+- **Example**: Interlocking modular archival filing drawers sliding open to reveal crisp vellum paper folios.
 
-#### 2. Modernist Swiss / Bauhaus Graphic Poster
-Clean geometric abstractions, generous negative space, asymmetric balance, and a warm, restrained earth-tone palette (e.g. slate grey, terracotta, deep navy, forest green, warm linen).
-- **Prompt Formula**:
-  `"Swiss style modern graphic art, minimalist geometric abstraction of [concept], matte earth tones of terracotta, slate grey, and warm cream, clean vector shapes, generous negative space, high-end editorial poster, no text, 16:9 aspect ratio."`
-- **Example Concepts**:
-  - Workflow automation: Overlapping clean circles and directional rhythm in terracotta and raw umber.
-  - Scaling & performance: Ascending clean bars of varying widths forming an elegant harmonious sequence.
+#### 2. Monocle Mid-Century Flat Editorial (Operations, Founders, SaaS, Commerce)
+Sophisticated European graphic editorial; flat gouache silhouettes, architectural shadows, and tactile workspace objects.
+- **Formula**:
+  `"Monocle magazine editorial illustration, mid-century modern graphic art, [tangible physical objects or setting for concept], flat gouache shapes, muted earthy palette of slate grey, olive drab, warm amber, and raw linen, hard-edge architectural cast shadows, sophisticated editorial minimalism, generous negative space, no text, 16:9 aspect ratio"`
+- **Example**: A craftsman's tidy workbench with specialized hand tools neatly aligned alongside blueprints.
 
-#### 3. Handcrafted Linocut & Woodblock Print
-Artisanal relief printmaking. Bold organic silhouettes, hand-carved woodcut texture, tactile ink impressions on textured deckle-edge paper.
-- **Prompt Formula**:
-  `"Editorial linocut print illustrating [concept], hand-carved woodblock aesthetic, rich black and warm clay ink on heavy textured artisanal paper, organic handcrafted printmaking feel, no text, no AI bloat, 16:9 aspect ratio."`
-- **Example Concepts**:
-  - Solo founder journey: Single lighthouse or wooden workbench with precision hand tools.
-  - Security / Encryption: Stylized handcrafted interlocking key and tumbler in deep black relief ink.
+#### 3. The New Yorker Editorial Spot Illustration (Academic, Culture, Essays, Ethics, Viva)
+Cultured, observational editorial cartooning; loose dip-pen ink linework with pale sepia and watercolor washes.
+- **Formula**:
+  `"New Yorker editorial spot illustration, loose fluid dip-pen and ink drawing, [wry or insightful visual metaphor for concept], delicate monochrome linework with pale sepia and watercolor wash pooling, off-white textured cartridge paper, cultured literary publication art, generous negative space, no text, 16:9 aspect ratio"`
+- **Example**: An olive branch resting across balanced brass legal scales atop an embossed parchment document.
 
-#### 4. Minimalist Studio Still-Life Photography
-Physical object metaphors photographed in a serene, naturally lit studio. Soft directional daylight from a large window, gentle shadows, tactile materials (linen, polished stone, matte ceramic, machined aluminium, paper stationery).
-- **Prompt Formula**:
-  `"Editorial studio photograph of [physical objects representing concept], soft natural window daylight, subtle soft shadows, warm muted aesthetic, tactile materials of paper and brushed metal, Kinfolk and Monocle magazine aesthetic, no text, 16:9 aspect ratio."`
-- **Example Concepts**:
-  - Data pipelines: Sleek brass hourglass beside a folded technical notebook on a light oak desk.
-  - Customer conversations: Two minimalist ceramic coffee cups and an open fountain pen on textured linen.
+#### 4. Constructivist Geometric Bauhaus Poster (Algorithms, Data, Statistics, Math)
+Swiss/Bauhaus asymmetric poster design minus text; bold graphic forms in spatial tension and matte earth-tone color fields.
+- **Formula**:
+  `"Swiss style modern constructivist graphic art, minimalist geometric abstraction of [mathematical or systemic concept], bold asymmetric composition of intersecting matte color planes in raw sienna, deep charcoal, and warm cream linen, clean structural vector geometry, generous negative space, high-end editorial poster, no text, 16:9 aspect ratio"`
+- **Example**: A branching B-tree hierarchy carving precise transit channels through a dense geometric grid.
+
+---
+
+### Automated Cover Generation & Cropping Pipeline
+
+The project uses **FLUX.1 Schnell** via Pollinations.ai with the key saved in `.env` (`POLLINATIONS_API_KEY`).
+
+#### Generation Script & Post-Processing (Sharp 16:9 Crop)
+
+Raw generated images from FLUX are `1024x576`. To remove any corner watermarks or signatures while preserving exact 16:9 aspect ratio, crop with `sharp`:
+
+```typescript
+import sharp from "sharp";
+
+const key = process.env.POLLINATIONS_API_KEY;
+
+// 1. Generate 1024x576 via FLUX.1 Schnell
+const res = await fetch("https://gen.pollinations.ai/v1/images/generations", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "black-forest-labs/flux.1-schnell",
+    prompt: promptText,
+    size: "1024x576",
+  }),
+});
+
+const data = await res.json();
+const rawBuf = Buffer.from(data.data[0].b64_json, "base64");
+
+// 2. Crop to 896x504 (exact 16:9) to trim 80px right and 48px bottom (removes watermarks)
+const croppedPng = await sharp(rawBuf)
+  .extract({ left: 48, top: 24, width: 896, height: 504 })
+  .png()
+  .toBuffer();
+
+await Bun.write("./cover.png", croppedPng);
+
+// 3. Update blog post (CLI automatically compresses to WebP, uploads to R2, updates manifest & DB)
+// bun run blog update <slug> --cover ./cover.png --cover-alt "<alt>"
+```
 
 ---
 

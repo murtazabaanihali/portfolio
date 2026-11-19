@@ -4,6 +4,8 @@ import { getProjectBySlug } from "@/actions";
 import { getImageFullURL } from "@/lib/utils";
 import { siteUrl } from "@/lib/blog/config";
 
+export const revalidate = 604800; // 7 days (high TTL)
+
 interface ProjectPageProps {
     params: Promise<{
         slug: string;

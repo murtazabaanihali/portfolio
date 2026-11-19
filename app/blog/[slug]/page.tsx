@@ -18,7 +18,7 @@ import {
 } from "@/lib/blog/config";
 import { categoryName, formatDate } from "@/lib/blog/format";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 604800; // 7 days (high TTL)
 type Props = { params: Promise<{ slug: string }> };
 
 async function article(slug: string) {

@@ -4,7 +4,7 @@ import {
     rss,
     unavailableResponse,
 } from "@/lib/blog/discovery";
-export const dynamic = "force-dynamic";
+export const revalidate = 604800; // 7 days (high TTL)
 export async function GET() {
     try {
         return new Response(rss(sortedPosts((await getPublished()).posts)), {
