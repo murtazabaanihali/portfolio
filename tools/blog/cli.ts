@@ -8,15 +8,17 @@ import {
 } from "./core";
 import { R2Storage, Conflict } from "./storage";
 import { migrateBlogs } from "./migrate";
+import { compressFileOrDir } from "./images";
 
 const help = `Blog Publishing CLI for Agents
 Usage: bun run blog <command> [arguments] [options]
 
 Commands:
-  publish <post.md...> [--cover <image>]  Publish one or more posts directly to R2
+  publish <post.md...> [--cover <image>]  Publish one or more posts directly to R2 (auto-compresses images)
   publish <directory>                    Bulk publish all posts found in a directory
   publish --batch <batch.json>           Bulk publish from a JSON array of files
   publish-batch <batch.json>             Alias for bulk publish from batch JSON
+  compress <file-or-dir>                 Compress image(s) to WebP using sharp with responsive width (max 1000px, q70)
   list                                   List all published posts
   unpublish <slug> --yes                 Unpublish a post (removes from manifest)
   delete <slug> --yes                    Permanently delete a post and its files
@@ -25,10 +27,20 @@ Commands:
   lock-status                            Check active publishing lock
   unlock [owner] --yes [--force]         Release publishing lock
 
+Options:
+  --no-compress                          Disable automatic image compression when publishing
+  --quality <1-100>                      Compression quality (default: 70)
+  --max-width <px>                       Maximum image width in pixels (default: 1000)
+  --out <path>                           Output path for single file compression
+
 Examples:
-  # Publish single post:
+  # Publish single post (automatically compresses cover & inline images to WebP):
   bun run blog publish ./my-post/post.md --cover ./my-post/cover.png
   bun run blog publish ./my-post/post.md (uses frontmatter cover.src)
+
+  # Compress an image standalone:
+  bun run blog compress ./image.jpg
+  bun run blog compress ./my-article/
 
   # Bulk publish multiple files:
   bun run blog publish ./post1.md ./post2.md ./post3.md
@@ -57,6 +69,11 @@ async function main() {
       batch: { type: "string" },
       force: { type: "boolean" },
       help: { type: "boolean" },
+      "no-compress": { type: "boolean" },
+      compress: { type: "boolean" },
+      quality: { type: "string" },
+      "max-width": { type: "string" },
+      out: { type: "string" },
     },
   });
 
@@ -83,6 +100,17 @@ async function main() {
     return ids[index];
   };
 
+  if (command === "compress") {
+    const target = required(0, "file or directory to compress");
+    const compressSummary = await compressFileOrDir(target, {
+      outputPath: options.out,
+      quality: options.quality ? parseInt(options.quality, 10) : undefined,
+      maxWidth: options["max-width"] ? parseInt(options["max-width"], 10) : undefined,
+    });
+    console.log(JSON.stringify(compressSummary, null, 2));
+    return;
+  }
+
   const storage = new R2Storage();
   const service = new BlogService(storage);
   let result: unknown;
@@ -91,6 +119,11 @@ async function main() {
     case "publish-batch":
     case "publish": {
       let items: BulkPublishItem[] = [];
+      const publishOpts = {
+        compress: options["no-compress"] ? false : true,
+        maxWidth: options["max-width"] ? parseInt(options["max-width"], 10) : undefined,
+        quality: options.quality ? parseInt(options.quality, 10) : undefined,
+      };
 
       if (options.batch || command === "publish-batch") {
         const batchFile = options.batch || required(0, "batch json file");
@@ -118,7 +151,10 @@ async function main() {
           items = files.map((file) => ({ file }));
         } else {
           // Single file publish with optional --cover
-          result = await service.publish(target, { coverPath: options.cover });
+          result = await service.publish(target, {
+            coverPath: options.cover,
+            ...publishOpts,
+          });
           break;
         }
       } else {
@@ -127,7 +163,7 @@ async function main() {
         );
       }
 
-      const bulkResult = await service.publishBulk(items);
+      const bulkResult = await service.publishBulk(items, publishOpts);
       result = bulkResult;
       if (bulkResult.failed > 0) {
         process.exitCode = 1;

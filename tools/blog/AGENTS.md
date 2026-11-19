@@ -21,22 +21,27 @@ bun run blog publish ./path/to/post.md
 The publishing tool automatically:
 1. Validates strict GFM Markdown and YAML frontmatter.
 2. Validates image formats and magic bytes (PNG, WebP, JPEG).
-3. Assigns `publishedAt` and `updatedAt` timestamps if missing.
-4. Uploads cover and any inline `./images/` to Cloudflare R2 under `blog/posts/<slug>/`.
-5. Rewrites relative inline image URLs to CDN URLs in the published post.
-6. Atomically updates `blog/manifest.json` in R2.
-7. Synchronizes the PostgreSQL database mirror (`blog_posts` table) if `DATABASE_URL` is configured.
+3. Automatically compresses cover and inline images using sharp before uploading to R2 (resizes to max width 1000px, quality 70, converted to WebP for optimal performance).
+4. Assigns `publishedAt` and `updatedAt` timestamps if missing.
+5. Uploads cover and any inline `./images/` to Cloudflare R2 under `blog/posts/<slug>/`.
+6. Rewrites relative inline image URLs to CDN URLs in the published post.
+7. Atomically updates `blog/manifest.json` in R2.
+8. Synchronizes the PostgreSQL database mirror (`blog_posts` table) if `DATABASE_URL` is configured.
 
 ### CLI Reference
 
 All commands return clean JSON to stdout:
 
 ```bash
-# Publish or update a single post
+# Publish or update a single post (images are automatically compressed to WebP before upload)
 bun run blog publish ./my-post/post.md [--cover ./my-post/cover.png]
 
 # Bulk publish multiple posts at once
 bun run blog publish ./post1.md ./post2.md ./post3.md
+
+# Optional: compress images offline / standalone before authoring:
+bun run blog compress ./image.jpg
+bun run blog compress ./my-article/
 
 # Bulk publish an entire directory of posts
 bun run blog publish ./my-articles/

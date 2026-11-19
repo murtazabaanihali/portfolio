@@ -19,7 +19,14 @@ import {
   type Post,
 } from "../../lib/blog/contract";
 import { bytes, text, Conflict, R2Storage, type Storage } from "./storage";
-import { hash, imageType, readInlineImages, type InlineImage } from "./images";
+import {
+  hash,
+  imageType,
+  readInlineImages,
+  compressImage,
+  type InlineImage,
+  type CompressOptions,
+} from "./images";
 
 export type PublishResult = {
   success: true;
@@ -34,6 +41,13 @@ export type PublishResult = {
 export type BulkPublishItem = {
   file: string;
   cover?: string;
+  compress?: boolean;
+};
+
+export type BulkPublishOptions = {
+  compress?: boolean;
+  maxWidth?: number;
+  quality?: number;
 };
 
 export type BulkPublishResult = {
@@ -283,7 +297,10 @@ export class BlogService {
    * Publish multiple blog posts in bulk.
    * Uploads all assets and updates blog/manifest.json under a single atomic lock.
    */
-  async publishBulk(items: BulkPublishItem[]): Promise<BulkPublishResult> {
+  async publishBulk(
+    items: BulkPublishItem[],
+    options?: BulkPublishOptions,
+  ): Promise<BulkPublishResult> {
     if (!items.length) {
       return { total: 0, published: 0, failed: 0, results: [] };
     }
@@ -314,6 +331,13 @@ export class BlogService {
         const parsed = parsePost(raw, true);
         const slug = parsed.meta.slug;
         const baseDir = dirname(item.file);
+        const shouldCompress = item.compress ?? options?.compress ?? false;
+        const compressOpts: CompressOptions | undefined = shouldCompress
+          ? {
+              maxWidth: options?.maxWidth,
+              quality: options?.quality,
+            }
+          : undefined;
 
         const existingPost = existingManifest.posts.find(
           (p) => p.meta.slug === slug,
@@ -333,14 +357,24 @@ export class BlogService {
         let coverMime: string | undefined;
 
         if (coverPath) {
-          coverBytes = await readFile(coverPath);
-          coverMime = imageType(coverBytes);
-          const ext =
-            extname(coverPath).toLowerCase() ||
-            (coverMime === "image/jpeg"
-              ? ".jpg"
-              : "." + coverMime.split("/")[1]);
-          coverKey = `blog/posts/${slug}/cover${ext}`;
+          const rawBytes = await readFile(coverPath);
+          const rawMime = imageType(rawBytes);
+
+          if (shouldCompress) {
+            const compressed = await compressImage(rawBytes, compressOpts);
+            coverBytes = compressed.bytes;
+            coverMime = compressed.type;
+            coverKey = `blog/posts/${slug}/cover${compressed.ext}`;
+          } else {
+            coverBytes = rawBytes;
+            coverMime = rawMime;
+            const ext =
+              extname(coverPath).toLowerCase() ||
+              (coverMime === "image/jpeg"
+                ? ".jpg"
+                : "." + coverMime.split("/")[1]);
+            coverKey = `blog/posts/${slug}/cover${ext}`;
+          }
         } else if (
           !coverKey.startsWith("https://") &&
           !coverKey.startsWith("blog/posts/")
@@ -354,11 +388,27 @@ export class BlogService {
         const inlineImages = await readInlineImages(baseDir, parsed.body);
         const urlMap = new Map<string, string>();
         const inlineAssets: string[] = [];
+        const finalInlineImages: Record<string, InlineImage> = {};
 
         for (const [src, img] of Object.entries(inlineImages)) {
-          const assetKey = `blog/posts/${slug}/images/${img.filename}`;
-          urlMap.set(src, cdnUrl(assetKey));
-          inlineAssets.push(assetKey);
+          if (shouldCompress) {
+            const compressed = await compressImage(img.bytes, compressOpts);
+            const baseFilename = img.filename.replace(/\.[^.]+$/, "");
+            const newFilename = `${baseFilename}${compressed.ext}`;
+            const assetKey = `blog/posts/${slug}/images/${newFilename}`;
+            urlMap.set(src, cdnUrl(assetKey));
+            inlineAssets.push(assetKey);
+            finalInlineImages[src] = {
+              bytes: compressed.bytes,
+              type: compressed.type,
+              filename: newFilename,
+            };
+          } else {
+            const assetKey = `blog/posts/${slug}/images/${img.filename}`;
+            urlMap.set(src, cdnUrl(assetKey));
+            inlineAssets.push(assetKey);
+            finalInlineImages[src] = img;
+          }
         }
 
         const rewrittenBody = rewriteImageUrls(parsed.body, urlMap);
@@ -389,7 +439,7 @@ export class BlogService {
           coverKey,
           coverBytes,
           coverMime,
-          inlineImages,
+          inlineImages: finalInlineImages,
           meta,
           finalMarkdown,
           assets,
@@ -512,11 +562,27 @@ export class BlogService {
    */
   async publish(
     filePath: string,
-    options: { coverPath?: string } = {},
+    options: {
+      coverPath?: string;
+      compress?: boolean;
+      maxWidth?: number;
+      quality?: number;
+    } = {},
   ): Promise<PublishResult> {
-    const bulk = await this.publishBulk([
-      { file: filePath, cover: options.coverPath },
-    ]);
+    const bulk = await this.publishBulk(
+      [
+        {
+          file: filePath,
+          cover: options.coverPath,
+          compress: options.compress,
+        },
+      ],
+      {
+        compress: options.compress,
+        maxWidth: options.maxWidth,
+        quality: options.quality,
+      },
+    );
     const first = bulk.results[0];
 
     if (!first || first.status === "failed") {
