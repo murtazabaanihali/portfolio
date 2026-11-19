@@ -5,7 +5,16 @@ import { tmpdir } from "node:os";
 import { BlogService, findPostsInDir } from "../core";
 import { migrateBlogs } from "../migrate";
 import { bytes, text, Conflict, type Storage, type Stored } from "../storage";
-import { hash, imageType, readInlineImages } from "../images";
+import {
+  hash,
+  imageType,
+  readInlineImages,
+  compressImage,
+  compressFileOrDir,
+  DEFAULT_MAX_IMAGE_WIDTH,
+  DEFAULT_IMAGE_QUALITY,
+} from "../images";
+import sharp from "sharp";
 import {
   parsePost,
   serializePost,
@@ -515,5 +524,218 @@ describe("Migration from legacy structure", () => {
     expect(
       await storage.get("blog/posts/migrated-article/cover.png"),
     ).not.toBeNull();
+  });
+});
+
+describe("sharp image compression and automated publishing optimization", () => {
+  test("compressImage converts large image to WebP with max-width 1000px and quality 70", async () => {
+    const rawLarge = await sharp({
+      create: {
+        width: 1400,
+        height: 700,
+        channels: 4,
+        background: { r: 40, g: 80, b: 120, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
+
+    const result = await compressImage(rawLarge);
+    expect(result.type).toBe("image/webp");
+    expect(result.ext).toBe(".webp");
+    expect(result.width).toBe(DEFAULT_MAX_IMAGE_WIDTH); // 1000px
+    expect(result.height).toBe(500); // scaled proportionally from 1400x700
+    expect(result.compressedSize).toBeLessThan(result.originalSize);
+    expect(result.bytes.byteLength).toBe(result.compressedSize);
+  });
+
+  test("compressImage preserves dimensions for images smaller than max-width", async () => {
+    const rawSmall = await sharp({
+      create: {
+        width: 400,
+        height: 300,
+        channels: 4,
+        background: { r: 200, g: 100, b: 50, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
+
+    const result = await compressImage(rawSmall);
+    expect(result.width).toBe(400);
+    expect(result.height).toBe(300);
+    expect(result.type).toBe("image/webp");
+  });
+
+  test("compressFileOrDir compresses directory and rewrites post.md references", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-compress-dir-"));
+    try {
+      await mkdir(join(temp, "images"));
+
+      const coverBuffer = await sharp({
+        create: {
+          width: 1200,
+          height: 675,
+          channels: 4,
+          background: { r: 10, g: 20, b: 30, alpha: 1 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      const inlineBuffer = await sharp({
+        create: {
+          width: 800,
+          height: 400,
+          channels: 4,
+          background: { r: 50, g: 60, b: 70, alpha: 1 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      await writeFile(join(temp, "cover.png"), coverBuffer);
+      await writeFile(join(temp, "images", "chart.png"), inlineBuffer);
+
+      const postContent = `---
+version: 1
+title: "Article with Images to Compress"
+slug: article-with-images
+description: "Testing automated compression on disk for article and image references."
+author: Murtaza Baanihali
+status: published
+category: engineering
+tags:
+  - testing
+publishedAt: 2024-01-01T00:00:00Z
+updatedAt: 2024-01-01T00:00:00Z
+cover:
+  src: "./cover.png"
+  alt: "Cover image preview"
+---
+
+## Section
+
+Here is an inline diagram:
+
+![Chart](./images/chart.png)
+`;
+      await writeFile(join(temp, "post.md"), postContent);
+
+      const summary = await compressFileOrDir(temp);
+      expect(summary.total).toBe(2);
+      expect(summary.processed).toBe(2);
+      expect(summary.savedBytes).toBeGreaterThan(0);
+
+      // Verify .webp files exist
+      const { stat } = await import("node:fs/promises");
+      const coverStat = await stat(join(temp, "cover.webp"));
+      expect(coverStat.isFile()).toBe(true);
+
+      const chartStat = await stat(join(temp, "images", "chart.webp"));
+      expect(chartStat.isFile()).toBe(true);
+
+      // Verify post.md was updated
+      const updatedMd = await import("node:fs/promises").then((fs) =>
+        fs.readFile(join(temp, "post.md"), "utf8"),
+      );
+      expect(updatedMd).toContain('src: "./cover.webp"');
+      expect(updatedMd).toContain("![Chart](./images/chart.webp)");
+    } finally {
+      await rm(temp, { recursive: true });
+    }
+  });
+
+  test("BlogService.publish automatically compresses cover and inline images to WebP when compress is true", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-publish-compress-"));
+    try {
+      await mkdir(join(temp, "images"));
+
+      const coverBuffer = await sharp({
+        create: {
+          width: 1400,
+          height: 700,
+          channels: 4,
+          background: { r: 15, g: 30, b: 45, alpha: 1 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      const inlineBuffer = await sharp({
+        create: {
+          width: 1200,
+          height: 600,
+          channels: 4,
+          background: { r: 60, g: 75, b: 90, alpha: 1 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      await writeFile(join(temp, "cover.png"), coverBuffer);
+      await writeFile(join(temp, "images", "benchmarks.png"), inlineBuffer);
+
+      const postContent = `---
+version: 1
+title: "Article with Automated Compression"
+slug: article-auto-compress
+description: "Testing R2 publishing pipeline with automatic sharp image compression."
+author: Murtaza Baanihali
+status: published
+category: engineering
+tags:
+  - performance
+publishedAt: null
+updatedAt: null
+cover:
+  src: "./cover.png"
+  alt: "Auto compressed cover"
+---
+
+## Benchmarks
+
+![Benchmark Results](./images/benchmarks.png)
+`;
+      await writeFile(join(temp, "post.md"), postContent);
+
+      const storage = new MemoryStorage();
+      const service = new BlogService(storage);
+
+      const result = await service.publish(join(temp, "post.md"), {
+        compress: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.cover).toBe("blog/posts/article-auto-compress/cover.webp");
+      expect(result.assets).toContain("blog/posts/article-auto-compress/cover.webp");
+      expect(result.assets).toContain(
+        "blog/posts/article-auto-compress/images/benchmarks.webp",
+      );
+
+      // Verify stored cover in R2 is WebP
+      const storedCover = await storage.get(
+        "blog/posts/article-auto-compress/cover.webp",
+      );
+      expect(storedCover).not.toBeNull();
+      expect(imageType(storedCover!.bytes)).toBe("image/webp");
+
+      // Verify stored inline image in R2 is WebP
+      const storedInline = await storage.get(
+        "blog/posts/article-auto-compress/images/benchmarks.webp",
+      );
+      expect(storedInline).not.toBeNull();
+      expect(imageType(storedInline!.bytes)).toBe("image/webp");
+
+      // Verify published Markdown body points to CDN WebP URL
+      const storedPost = await storage.get(result.contentKey);
+      expect(storedPost).not.toBeNull();
+      const rawStoredMd = text(storedPost!);
+      expect(rawStoredMd).toContain(
+        "https://content.example.com/blog/posts/article-auto-compress/images/benchmarks.webp",
+      );
+    } finally {
+      await rm(temp, { recursive: true });
+    }
   });
 });

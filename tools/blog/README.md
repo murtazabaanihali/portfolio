@@ -59,11 +59,19 @@ When publishing in bulk:
 The tool:
 1. Validates strict GFM Markdown and YAML frontmatter.
 2. Checks raster image format signatures (PNG, WebP, JPEG).
-3. Resolves and uploads the cover image to `blog/posts/<slug>/cover.<ext>`.
-4. Uploads inline `./images/` and rewrites Markdown references to CDN URLs.
-5. Uploads the finalized post to `blog/posts/<slug>/post.md`.
-6. Atomically updates `blog/manifest.json` under an absent-only lock (`blog/publishing.lock`).
-7. Updates the PostgreSQL database mirror (`blog_posts` table) if `DATABASE_URL` is configured.
+3. Automatically compresses cover and inline images via sharp (responsive width cap of 1000px, quality 70, WebP conversion) before uploading to R2.
+4. Resolves and uploads the cover image to `blog/posts/<slug>/cover.webp`.
+5. Uploads inline `./images/` and rewrites Markdown references to CDN URLs.
+6. Uploads the finalized post to `blog/posts/<slug>/post.md`.
+7. Atomically updates `blog/manifest.json` under an absent-only lock (`blog/publishing.lock`).
+8. Updates the PostgreSQL database mirror (`blog_posts` table) if `DATABASE_URL` is configured.
+
+### Compress Images Standalone (Optional)
+
+```bash
+bun run blog compress ./path/to/image.jpg
+bun run blog compress ./path/to/my-article/
+```
 
 ### List Published Posts
 
