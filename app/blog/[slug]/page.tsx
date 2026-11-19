@@ -8,6 +8,10 @@ import rehypeSlug from "rehype-slug";
 import { ArrowLeft } from "lucide-react";
 
 import { CopyLink } from "@/components/blog/copy-link";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Card } from "@/components/ui/card";
 import { getArticle } from "@/lib/blog/store";
 import { getRelatedBlogPosts } from "@/actions";
 import { articleInfo, jsonLd, slugSchema } from "@/lib/blog/contract";
@@ -137,7 +141,7 @@ export default async function Article({ params }: Props) {
                 {categoryName(p.category)}
               </Link>
             </nav>
-            <h1 className="mt-6 text-[2.1rem] font-bold leading-[1.12] tracking-tight sm:text-[2.6rem]">
+            <h1 className="mt-6 font-serif text-[2.1rem] font-bold leading-[1.12] tracking-tight sm:text-[2.6rem]">
               {p.title}
             </h1>
             <p className="mt-5 text-lg leading-relaxed text-muted-foreground">
@@ -145,12 +149,11 @@ export default async function Article({ params }: Props) {
             </p>
             <div className="mt-7 flex items-center justify-between gap-6 border-y border-border py-4">
               <div className="flex items-center gap-3 text-sm">
-                <span
-                  aria-hidden
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted font-mono text-xs font-semibold text-muted-foreground"
-                >
-                  {initials}
-                </span>
+                <Avatar className="size-9 font-mono text-xs font-semibold">
+                  <AvatarFallback className="bg-muted text-muted-foreground">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
                 <div>
                   <p className="font-medium">{p.author}</p>
                   <p className="text-muted-foreground">
@@ -176,23 +179,25 @@ export default async function Article({ params }: Props) {
           </header>
 
           {toc.length >= 3 && (
-            <details className="mt-8 rounded-lg border border-border">
-              <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium">
-                In this article
-              </summary>
-              <ol className="space-y-2 px-4 pb-4 text-sm">
-                {toc.map((h) => (
-                  <li key={h.id} className={h.depth === 3 ? "ml-4" : ""}>
-                    <a
-                      href={"#" + h.id}
-                      className="text-muted-foreground hover:text-primary"
-                    >
-                      {h.title}
-                    </a>
-                  </li>
-                ))}
-              </ol>
-            </details>
+            <Card className="mt-8">
+              <details className="group">
+                <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium">
+                  In this article
+                </summary>
+                <ol className="space-y-2 px-4 pb-4 text-sm">
+                  {toc.map((h) => (
+                    <li key={h.id} className={h.depth === 3 ? "ml-4" : ""}>
+                      <a
+                        href={"#" + h.id}
+                        className="text-muted-foreground hover:text-primary"
+                      >
+                        {h.title}
+                      </a>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            </Card>
           )}
 
           <div className="blog-prose mt-10">
@@ -254,12 +259,10 @@ export default async function Article({ params }: Props) {
             {p.tags.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {p.tags.map((tag) => (
-                  <Link
-                    className="rounded-full bg-muted px-3 py-1 text-sm text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-                    key={tag}
-                    href={`/blog?tag=${encodeURIComponent(tag)}`}
-                  >
-                    #{tag}
+                  <Link key={tag} href={`/blog?tag=${encodeURIComponent(tag)}`}>
+                    <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80">
+                      #{tag}
+                    </Badge>
                   </Link>
                 ))}
               </div>
@@ -295,7 +298,7 @@ export default async function Article({ params }: Props) {
                     >
                       {formatDate(r.publishedAt!)}
                     </time>
-                    <h3 className="mt-1 font-semibold leading-snug tracking-tight transition-colors group-hover:text-primary">
+                    <h3 className="mt-1 font-serif font-semibold leading-snug tracking-tight transition-colors group-hover:text-primary">
                       {r.title}
                     </h3>
                   </Link>

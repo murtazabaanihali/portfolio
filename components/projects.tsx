@@ -30,35 +30,33 @@ export const ProjectsClientSide = ({ initialData }: ProjectsClientSideProps) => 
         useProjects(initialData);
 
     return (
-        <div className="container mx-auto px-4">
+        <div className="container mx-auto px-4 max-w-6xl">
             <div className="text-center mb-16">
-                <h1 className="text-4xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
+                <h1 className="text-3xl sm:text-5xl md:text-6xl font-bold tracking-tight mb-4">
                     My Projects
                 </h1>
-                <p className="text-xl text-muted-foreground max-w-3xl mx-auto mb-8">
+                <p className="text-base sm:text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto mb-8">
                     A collection of projects showcasing my expertise in
                     full-stack development, from web applications to mobile
                     solutions and AI-powered platforms.
                 </p>
                 <div className="flex flex-wrap justify-center gap-2 mb-8">
                     <Button
-                        variant={!tag ? "default" : "ghost"}
+                        variant={!tag ? "default" : "outline"}
                         size="sm"
-                        className="rounded-full"
                         onClick={() => onTag()}
                     >
                         <Filter className="h-4 w-4" />
                         All Projects
                     </Button>
-                    {Object.entries(PROJECT_FILTER_MAP).map((entry, key) => (
+                    {Object.entries(PROJECT_FILTER_MAP).map(([filterTag, label]) => (
                         <Button
-                            key={key}
+                            key={filterTag}
                             size="sm"
-                            variant={tag === entry[0] ? "default" : "ghost"}
-                            className="rounded-full"
-                            onClick={() => onTag(entry[0] as any)}
+                            variant={tag === filterTag ? "default" : "outline"}
+                            onClick={() => onTag(filterTag as any)}
                         >
-                            {entry[1]}
+                            {label}
                         </Button>
                     ))}
                 </div>
@@ -69,30 +67,29 @@ export const ProjectsClientSide = ({ initialData }: ProjectsClientSideProps) => 
                     <div>
                         <div
                             id="projects"
-                            className="grid md:grid-cols-2 lg:grid-cols-3 gap-8"
+                            className="grid md:grid-cols-2 lg:grid-cols-3 gap-6"
                         >
-                            {data?.projects.map((project) => (
+                            {data.projects.map((project) => (
                                 <Link
                                     key={project.id}
                                     href={`/projects/${project.slug}`}
+                                    className="group block h-full"
+                                    onClick={() => {
+                                        try {
+                                            trackUmamiEvent(
+                                                `Project Clicked: ${project.slug}`,
+                                                {
+                                                    title: project.title,
+                                                    slug: project.slug,
+                                                },
+                                            );
+                                        } catch (error) {
+                                            console.warn("Umami tracking error:", error);
+                                        }
+                                    }}
                                 >
-                                    <Card
-                                        className="group hover:shadow-lg transition-all duration-300 hover:-translate-y-1 cursor-pointer h-full"
-                                        onClick={() => {
-                                            try {
-                                                trackUmamiEvent(
-                                                    `Project Clicked: ${project.slug}`,
-                                                    {
-                                                        title: project.title,
-                                                        slug: project.slug,
-                                                    },
-                                                );
-                                            } catch (error) {
-                                                console.warn("Umami tracking error:", error);
-                                            }
-                                        }}
-                                    >
-                                        <div className="aspect-video relative overflow-hidden rounded-t-lg">
+                                    <Card className="h-full overflow-hidden transition-colors hover:border-foreground/30 flex flex-col">
+                                        <div className="aspect-video relative overflow-hidden bg-muted">
                                             <Image
                                                 src={getImageFullURL(
                                                     project.mainImage,
@@ -101,40 +98,32 @@ export const ProjectsClientSide = ({ initialData }: ProjectsClientSideProps) => 
                                                 alt={project.title}
                                                 fill
                                                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                                                className="object-cover group-hover:scale-105 transition-transform duration-300"
+                                                className="object-cover transition-transform duration-300 group-hover:scale-105"
                                             />
                                         </div>
-                                        <CardHeader>
-                                            <CardTitle className="group-hover:text-primary transition-colors mb-2">
+                                        <CardHeader className="flex-1 pb-3">
+                                            <CardTitle className="transition-colors group-hover:text-primary">
                                                 {project.title}
                                             </CardTitle>
                                             <CardDescription className="line-clamp-2">
                                                 {project.shortDescription}
                                             </CardDescription>
                                         </CardHeader>
-                                        <CardContent>
-                                            <div className="flex flex-wrap gap-2">
+                                        <CardContent className="pt-0">
+                                            <div className="flex flex-wrap gap-1.5">
                                                 {project.techStack
                                                     .slice(0, 3)
                                                     .map((tech) => (
                                                         <Badge
                                                             key={tech}
-                                                            variant="outline"
-                                                            className="text-xs"
+                                                            variant="secondary"
                                                         >
                                                             {tech}
                                                         </Badge>
                                                     ))}
-                                                {project.techStack.length >
-                                                    3 && (
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="text-xs"
-                                                    >
-                                                        +
-                                                        {project.techStack
-                                                            .length - 3}{" "}
-                                                        more
+                                                {project.techStack.length > 3 && (
+                                                    <Badge variant="outline">
+                                                        +{project.techStack.length - 3} more
                                                     </Badge>
                                                 )}
                                             </div>
@@ -143,10 +132,10 @@ export const ProjectsClientSide = ({ initialData }: ProjectsClientSideProps) => 
                                 </Link>
                             ))}
                         </div>
-                        <div className="mt-8 mx-auto flex justify-center">
+                        <div className="mt-12 flex justify-center">
                             {!!data.more && (
                                 <Button
-                                    variant={"secondary"}
+                                    variant="secondary"
                                     onClick={loadMore}
                                     disabled={isValidating || isLoading}
                                 >
@@ -158,7 +147,7 @@ export const ProjectsClientSide = ({ initialData }: ProjectsClientSideProps) => 
                         </div>
                     </div>
                 ) : (
-                    <p className="mt-5 text-center font-semibold w-fit mx-auto">
+                    <p className="mt-8 text-center text-muted-foreground">
                         {isValidating || isLoading
                             ? "Loading..."
                             : "No projects found."}

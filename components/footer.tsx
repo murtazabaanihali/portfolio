@@ -2,93 +2,95 @@ import Link from "next/link";
 import { Heart } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { NAVIGATION_ITEMS, SOCIAL_LINKS } from "@/components/constant";
 
 export function Footer() {
     return (
-        <footer className="bg-muted/30 border-t">
-            <div className="container mx-auto px-4 py-10">
+        <footer className="border-t border-border bg-card/40">
+            <div className="container mx-auto px-4 py-12 max-w-6xl">
                 <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-8">
                     <div>
                         <Link
                             href="/"
-                            className="block text-xl font-extrabold bg-gradient-to-r from-primary to-foreground bg-clip-text text-transparent"
+                            className="block text-lg font-bold tracking-tight text-foreground hover:text-foreground/80 transition-colors"
                         >
                             Murtaza Baanihali
                         </Link>
                         <p className="text-muted-foreground mt-2 max-w-xs text-sm">
-                            Full-stack developer & founder.
+                            Full-stack developer &amp; founder.
                         </p>
                     </div>
 
-                    <nav className="mt-6 md:mt-0 flex flex-col gap-1">
-                        <span className="text-xs uppercase text-muted-foreground font-medium mb-1">
+                    <nav className="flex flex-col gap-1.5" aria-label="Footer Menu">
+                        <span className="text-xs uppercase text-muted-foreground font-semibold mb-1 tracking-wider">
                             Menu
                         </span>
                         {NAVIGATION_ITEMS.map((link) => (
                             <Link
                                 key={link.href}
                                 href={link.href}
-                                className="hover:text-foreground text-muted-foreground transition-colors"
+                                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                             >
                                 {link.name}
                             </Link>
                         ))}
                     </nav>
 
-                    <nav className="mt-6 md:mt-0 flex flex-col gap-1">
-                        <span className="text-xs uppercase text-muted-foreground font-medium mb-1">
+                    <nav className="flex flex-col gap-1.5" aria-label="Legal">
+                        <span className="text-xs uppercase text-muted-foreground font-semibold mb-1 tracking-wider">
                             Legal
                         </span>
                         <Link
                             href="/privacy"
-                            className="hover:text-foreground text-muted-foreground transition-colors"
+                            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                         >
                             Privacy Policy
                         </Link>
                         <Link
                             href="/terms"
-                            className="hover:text-foreground text-muted-foreground transition-colors"
+                            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                         >
                             Terms of Service
                         </Link>
                     </nav>
 
-                    <div className="mt-6 md:mt-0">
-                        <span className="text-xs uppercase text-muted-foreground font-medium mb-1">
+                    <div>
+                        <span className="text-xs uppercase text-muted-foreground font-semibold mb-2 block tracking-wider">
                             Connect
                         </span>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1.5">
                             {SOCIAL_LINKS.map((item, i) => (
-                                <a
+                                <Button
                                     key={i}
-                                    href={item.link}
-                                    title={item.title}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                    asChild
+                                    variant="outline"
+                                    size="icon"
+                                    data-umami-event={item.title}
                                 >
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="rounded-full hover:bg-muted"
-                                        data-umami-event={item.title}
+                                    <a
+                                        href={item.link}
+                                        title={item.title}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
                                     >
-                                        <item.icon />
-                                    </Button>
-                                </a>
+                                        <item.icon className="size-4" />
+                                    </a>
+                                </Button>
                             ))}
                         </div>
                     </div>
                 </div>
 
-                <div className="border-t mt-10 pt-6 flex flex-col md:flex-row justify-between items-center gap-2 text-muted-foreground text-xs">
+                <Separator className="my-8" />
+
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-2 text-muted-foreground text-xs">
                     <span>
-                        &copy; {new Date().getFullYear()} Murtaza Baanihali. All
-                        rights reserved.
+                        &copy; {new Date().getFullYear()} Murtaza Baanihali. All rights reserved.
                     </span>
                     <span className="flex items-center gap-1">
                         Made with{" "}
-                        <Heart className="h-4 w-4 text-red-500 fill-current" />{" "}
+                        <Heart className="size-3.5 text-red-500 fill-current" />{" "}
                         by me.
                     </span>
                 </div>

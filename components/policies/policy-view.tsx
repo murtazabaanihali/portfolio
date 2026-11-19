@@ -69,7 +69,7 @@ export function PolicyView({ type, content }: PolicyViewProps) {
 
         {/* Main Document Content */}
         <main className="space-y-8">
-          <Card className="border bg-card/60 backdrop-blur-sm shadow-sm p-6 sm:p-10 md:p-12">
+          <Card className="p-6 sm:p-10 md:p-12">
             <PolicyMarkdown content={content} />
           </Card>
 

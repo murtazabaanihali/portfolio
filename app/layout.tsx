@@ -1,6 +1,6 @@
 import Script from "next/script";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Playfair_Display } from "next/font/google";
 
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -8,7 +8,12 @@ import { Navigation } from "@/components/navigation";
 import { Footer } from "@/components/footer";
 import { siteUrl } from "@/lib/blog/config";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
+const playfair = Playfair_Display({
+    subsets: ["latin"],
+    variable: "--font-serif",
+    display: "swap",
+});
 
 const baseUrl = siteUrl();
 
@@ -81,7 +86,7 @@ export default function RootLayout({
                     data-website-id={process.env.ANALYTICS_WEBSITE_ID}
                 />
             )}
-            <body className={inter.className}>
+            <body className={`${inter.variable} ${playfair.variable} font-sans`}>
                 <ThemeProvider
                     attribute="class"
                     defaultTheme="system"
