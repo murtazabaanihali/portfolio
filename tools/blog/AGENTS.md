@@ -1,49 +1,195 @@
-# External blog agents
+# Blog Authoring & Publishing Guide for Agents
 
-You may author Markdown without calling built-in AI. Read `tools/blog/blog-context.md` first (resolved relative to this directory; never delete or upload it). If absent, copy the tracked public example and tell the operator. Do not infer missing personal/product facts.
+This guide instructs AI and automated agents on authoring, formatting, illustrating, and publishing blog posts for Murtaza Baanihali's portfolio blog.
 
-## Boundaries
+---
 
-- No migrations, schema generation, DB push, deployment, resource provisioning, paid generation, or remote publish unless the operator explicitly authorizes that operation.
-- Draft storage on R2 is PUBLIC. Do not upload private sources, secrets, research bundles, or .env.
-- Work outside this tool's .work directory for original inputs; import creates disposable copies. Publication cleans only owned copies.
-- Use GFM + strict YAML frontmatter, never HTML/MDX. See examples/post.md and lib/blog/contract.ts.
-- Stable slugs; one configured category; normalized tags; descriptive cover alt. Dates are ISO-8601 with explicit timezone.
-- Preserve original publishedAt on edits. Set updatedAt to the actual correction time. No scheduled future publication.
-- Write complete, conversational blog posts across broad subjects (news, opinions, guides, technology, marketing, business, and more), not planning briefs or questionnaires. Categories are navigation labels, not topic restrictions. Use prose and a shape that fits the post; no mandatory technical-article template.
-- Links must be useful and factual; no fabricated tests/experience/benchmarks or forced product promotion. Suggested headlines/model names are not verified news; source current claims or make the uncertainty explicit.
+## 1. Fast Track: Publish in One Command
 
-## Noninteractive workflow
+To publish an article, author your Markdown file (and cover image), then run:
 
-Run commands from the repo root using Bun (or use an absolute CLI path from another directory with environment exported):
-1. `bun run blog import /absolute/article.md --cover /absolute/cover.png`
-2. Save returned workspace ID. `bun run blog validate ID`.
-3. For first publication: `bun run blog status ID published` (sets publication timestamps).
-4. `bun run blog plan ID --out /tmp/reviewed-blog-plan.json` and inspect real text + cover diff.
-5. With human approval: `bun run blog approve ID`, then `bun run blog publish --plan /tmp/reviewed-blog-plan.json`.
-6. An operator-authorized automation may use `--yes` instead of a local approval record. Never interpret authoring permission as publishing permission.
-7. Read `cleanupWarnings` separately from `committed`. Do not republish just because cleanup failed.
+```bash
+bun run blog publish ./path/to/post.md --cover ./path/to/cover.png
+```
 
-Inline images: supply PNG/JPEG/WebP files in an `images/` directory beside your source Markdown and place `![Descriptive alt](./images/settings.png)` wherever the image belongs. Reference-style images are supported. `import` automatically copies referenced files, and publication uploads them and rewrites URLs. Use flat filenames beginning with a letter/number, containing only letters/numbers/hyphens/underscores, with lowercase extensions; no symlinks or traversal. Limits: 10MB each, 50 images/50MB total. Do not use a local-image reference definition for ordinary links too. Existing workspaces may receive files directly in `.work/ID/images/`; validate/replan/reapprove after edits. Image bytes are approval-bound. The tool does not capture screenshots or acquire inline images. You supply files and ensure privacy/reuse rights before any public draft upload. See README.md for the bundle format.
+If the Markdown frontmatter references a local cover image (e.g. `cover: { src: "./cover.png" }`), you can omit `--cover`:
 
-Editing remote posts: `fetch SLUG` returns an owned workspace bound to its remote revision. Edit post.md via the returned workspace location or known tools/blog/.work/ID, preserve slug/publication time, then review again.
+```bash
+bun run blog publish ./path/to/post.md
+```
 
-Batch JSON: `{"version":1,"actions":[{"type":"upsert","workspace":"UUID"}]}`.
-Pass to `plan --batch file.json`; commit the saved plan. Removals must be explicit `unpublish` or `delete` actions; absence of local files means nothing.
+The publishing tool automatically:
+1. Validates strict GFM Markdown and YAML frontmatter.
+2. Validates image formats and magic bytes (PNG, WebP, JPEG).
+3. Assigns `publishedAt` and `updatedAt` timestamps if missing.
+4. Uploads cover and any inline `./images/` to Cloudflare R2 under `blog/posts/<slug>/`.
+5. Rewrites relative inline image URLs to CDN URLs in the published post.
+6. Atomically updates `blog/manifest.json` in R2.
+7. Synchronizes the PostgreSQL database mirror (`blog_posts` table) if `DATABASE_URL` is configured.
 
-Dry-run: `publish --batch file.json --dry-run` reads/validates/diffs only. It does not generate, upload, clean, or delete. Exit 3 means conflict: fetch/review/replan; do not force overwrite.
+### CLI Reference
 
-Built-in generation is optional and separate: `generate brief.json --yes` incurs provider charges and transmits selected material. Every new article and AI revision uses a bounded tool-calling research agent before writing; legacy research:false does not bypass it. The agent generates queries, reads pages and submits a passage-backed dossier. Incomplete research stays flagged for review and cannot auto-publish. Writer output defaults to a 24,000-token ceiling, not a length target. Optional BLOG_RESEARCH_MODELS must support function tools; otherwise BLOG_TEXT_MODELS is used. Generation never publishes. Failed covers preserve generated text and return a retry ID.
+All commands return clean JSON to stdout:
 
-## Coverage and bounded autonomy
+```bash
+# Publish or update a single post
+bun run blog publish ./my-post/post.md [--cover ./my-post/cover.png]
 
-- `related "topic query"` searches cached PostgreSQL blog_posts metadata and local drafts, never R2. Only published DB entries have linkable canonical URLs. Coverage is lexical/heuristic, not semantic proof.
-- Generation checks likely coverage by default. `--allow-existing-topic` (or `allowExistingTopic: true` in a brief/batch) permits a distinct follow-up, NEVER an existing-slug overwrite.
-- `autonomous batch.json --yes` authorizes paid planning/generation for selected direction objects/free-text descriptions and count (1–10), with local draft mode by default. `mode: "publish"` additionally requires `--auto-publish`. The TUI `n` wizard has equivalent explicit typed confirmation.
-- The TUI initially asks the LLM for directions, with separate paid-call confirmation. `suggest --yes` exposes the same DB/local-context-driven suggestions to CLI callers. No fixed menu or predefined fallback. Selected `{id, label, detail}` objects must retain their scope when passed to `autonomous`.
-- Live autonomy only creates new posts, holds uncertain/incomplete work locally, and uses fresh coverage checks and the existing publishing core. Model review does not establish factual truth. No recurring scheduling or automatic lock recovery.
-- Draft rejection: In TUI Studio press `x` (type `reject` or `y` to confirm), or CLI `reject ID --yes`. This completely removes the draft from everywhere: local workspace (.work/UUID), PostgreSQL database mirror (if configured), remote R2 editorial inventory (if present), and invalidates the in-memory catalog cache.
-- Treat DHEM as the owner-confirmed umbrella brand for almost all projects; do not infer legal status or shared product features/accounts. DheGEN needs supplied product facts before feature-specific articles.
+# Bulk publish multiple posts at once
+bun run blog publish ./post1.md ./post2.md ./post3.md
 
+# Bulk publish an entire directory of posts
+bun run blog publish ./my-articles/
 
-NO NEED TO RUN BUILD OR TEST OR TYPECHECKING CMDS WHEN CREATING A NEW BLOG POST, IT IS ONLY REQUIRED WHEN ANY CODE CHANGES HAPPEN.
+# Bulk publish from a batch JSON file
+bun run blog publish --batch ./batch.json
+
+# List all published posts
+bun run blog list
+
+# Unpublish a post (removes from public manifest while keeping files in R2)
+bun run blog unpublish my-post-slug --yes
+
+# Permanently delete a post, its files in R2, and its DB record
+bun run blog delete my-post-slug --yes
+
+# Migrate legacy R2 blog/objects/ layout to blog/posts/<slug>/
+bun run blog migrate --yes
+```
+
+---
+
+## 2. Article File Structure & Conventions
+
+Keep each article self-contained in its own directory:
+
+```text
+my-article/
+├── post.md
+├── cover.png (or cover.webp / cover.jpg)
+└── images/
+    ├── architecture.png
+    └── benchmarks.png
+```
+
+### Frontmatter Schema
+
+Posts require strict YAML frontmatter without raw HTML or MDX:
+
+```yaml
+---
+version: 1
+title: "Designing a Clean, Reliable Publishing Pipeline"
+slug: clean-reliable-publishing-pipeline
+description: "A clear, substantive summary of the article (30–320 characters)."
+author: Murtaza Baanihali
+status: published
+category: engineering
+tags:
+  - architecture
+  - developer-experience
+publishedAt: null
+updatedAt: null
+cover:
+  src: "./cover.png"
+  alt: "Minimalist technical ink drawing of modular architecture on warm textured paper"
+---
+```
+
+- **`version`**: Always `1`.
+- **`title`**: 5–160 characters. Concrete, specific, and informative.
+- **`slug`**: Lowercase alphanumeric with hyphens (e.g. `scaling-distributed-systems`). Must be unique.
+- **`description`**: 30–320 characters. Plain text summary explaining the practical value.
+- **`author`**: Defaults to `"Murtaza Baanihali"`.
+- **`status`**: `"published"`.
+- **`category`**: Must match one of the configured categories:
+  - `engineering` — Architecture, implementation details, and maintainable software.
+  - `building-products` — From idea to useful product: scope, iteration, and shipping.
+  - `founder-notes` — Practical notes on decisions and trade-offs as a solo founder.
+  - `ai-agents` — AI models, practical uses, integrations, and agent workflows.
+  - `ai-news` — Model announcements, releases, and developments.
+  - `marketing-growth` — Audience building, positioning, distribution, and growth.
+  - `business-ecommerce` — Online business, economics, and real-world trade-offs.
+  - `technology` — Technology news, tools, trends, and impact.
+  - `perspectives` — Opinions, observations, and ideas across general topics.
+  - `developer-experience` — Tools, APIs, SDKs, and developer workflows.
+  - `cloud-performance` — Deploying, measuring, and operating reliable cloud systems.
+  - `design-accessibility` — Thoughtful interfaces and accessible web design.
+- **`tags`**: 1–12 lowercase hyphenated strings.
+- **`publishedAt` / `updatedAt`**: Set to `null` on new posts (assigned automatically at publish time) or retain existing ISO strings when editing.
+- **`cover`**:
+  - `src`: Relative path `./cover.png` (or `.jpg`, `.jpeg`, `.webp`), or an existing HTTPS / managed key.
+  - `alt`: 5–300 characters. Descriptive alt text representing the visual subject.
+
+### Inline Images
+
+Reference local inline images using `./images/<filename>.<ext>`:
+
+```markdown
+Here is the system boundary:
+
+![Modular system architecture](./images/architecture.png)
+```
+
+- Images must reside in a flat `./images/` directory beside `post.md`.
+- Formats: PNG, WebP, or JPEG (no SVG, no symlinks, max 10MB each, max 50 images total).
+- The publisher uploads them to `blog/posts/<slug>/images/<filename>` and rewrites URLs automatically.
+
+---
+
+## 3. Visual Direction: Cover Images & Placeholders
+
+Every article must have an impressive, high-quality, professional cover image. Content will be provided externally by the working agent.
+
+### ⛔ What Is Strictly Forbidden (AI Slop & Sci-Fi Clichés)
+
+Do **NOT** generate or accept:
+- **No glowing neon / cyberpunk**: No neon blues, purples, Tron grids, floating digital particles, matrix green rain, or glowing wires.
+- **No sci-fi tropes**: No robot hands touching holograms, glowing cyborg brains in glass spheres, floating VR headsets, or laser circuits.
+- **No generic AI bloat**: No glossy 3D plastic spheres, floating abstract cubes, corporate stock vector people with oversized limbs, or fake UI screenshots with unreadable gibberish text.
+
+### Approved Visual Styles (Fresh, Impressive, Professional)
+
+Choose from one of these clean aesthetic directions:
+
+#### 1. Minimalist Architectural & Technical Ink Drawings
+Clean technical drafting or fine-liner pen sketches. Geometric clarity, subtle cross-hatching, crisp black or dark sepia ink on warm off-white or natural paper texture.
+- **Prompt Formula**:
+  `"Minimalist technical ink line drawing representing [concept/metaphor], fine architectural drafting linework, elegant cross-hatching, crisp monochrome ink on warm cream textured paper, restrained, high-end editorial illustration, no text, 16:9 aspect ratio."`
+- **Example Concepts**:
+  - Cloud infrastructure: Exploded architectural axonometric diagram of interlocking clean stone or paper blocks.
+  - Email deliverability / APIs: Minimalist technical drawing of pneumatic routing tubes or precision envelope calipers.
+  - Databases / indexing: Clean technical cross-section of a library card catalog mechanism or geometric sorting grid.
+
+#### 2. Modernist Swiss / Bauhaus Graphic Poster
+Clean geometric abstractions, generous negative space, asymmetric balance, and a warm, restrained earth-tone palette (e.g. slate grey, terracotta, deep navy, forest green, warm linen).
+- **Prompt Formula**:
+  `"Swiss style modern graphic art, minimalist geometric abstraction of [concept], matte earth tones of terracotta, slate grey, and warm cream, clean vector shapes, generous negative space, high-end editorial poster, no text, 16:9 aspect ratio."`
+- **Example Concepts**:
+  - Workflow automation: Overlapping clean circles and directional rhythm in terracotta and raw umber.
+  - Scaling & performance: Ascending clean bars of varying widths forming an elegant harmonious sequence.
+
+#### 3. Handcrafted Linocut & Woodblock Print
+Artisanal relief printmaking. Bold organic silhouettes, hand-carved woodcut texture, tactile ink impressions on textured deckle-edge paper.
+- **Prompt Formula**:
+  `"Editorial linocut print illustrating [concept], hand-carved woodblock aesthetic, rich black and warm clay ink on heavy textured artisanal paper, organic handcrafted printmaking feel, no text, no AI bloat, 16:9 aspect ratio."`
+- **Example Concepts**:
+  - Solo founder journey: Single lighthouse or wooden workbench with precision hand tools.
+  - Security / Encryption: Stylized handcrafted interlocking key and tumbler in deep black relief ink.
+
+#### 4. Minimalist Studio Still-Life Photography
+Physical object metaphors photographed in a serene, naturally lit studio. Soft directional daylight from a large window, gentle shadows, tactile materials (linen, polished stone, matte ceramic, machined aluminium, paper stationery).
+- **Prompt Formula**:
+  `"Editorial studio photograph of [physical objects representing concept], soft natural window daylight, subtle soft shadows, warm muted aesthetic, tactile materials of paper and brushed metal, Kinfolk and Monocle magazine aesthetic, no text, 16:9 aspect ratio."`
+- **Example Concepts**:
+  - Data pipelines: Sleek brass hourglass beside a folded technical notebook on a light oak desk.
+  - Customer conversations: Two minimalist ceramic coffee cups and an open fountain pen on textured linen.
+
+---
+
+## 4. Writing Quality & Editorial Standards
+
+- **Finished Reader-Facing Prose**: Write complete, well-reasoned articles. Avoid outlines, questionnaires, placeholders, or corporate filler.
+- **Engaging Voice**: Direct, conversational, and specific. Open with the substantive news, central argument, or tension—do not start with generic "In today's fast-paced digital world" openings.
+- **Accurate Claims**: Do not invent benchmarks, customer quotes, or test results. Explain principles with concrete, supported examples.
+- **Clean Markdown**: Use standard GFM headings (`##`, `###`), tables, fenced code blocks, and blockquotes. Never use `<h1>` in the body (the page renders the title).

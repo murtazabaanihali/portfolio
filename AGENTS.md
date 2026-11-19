@@ -25,7 +25,7 @@ Run from the repository root.
 - `lib/blog/` — shared blog contract used by both the site and `tools/blog` (categories, frontmatter schemas, R2 object layout).
 - `lib/db/` — Drizzle schema and queries (Neon serverless driver). `blog_posts` is a metadata mirror for coverage/related lookup only; content serving and publishing stay R2-backed.
 - `drizzle/` — generated SQL migrations; do not hand-edit.
-- `tools/blog/` — local-only Bun authoring/publishing CLI + Ink TUI; excluded from app typecheck/lint and the Worker build (`next.config.mjs`).
+- `tools/blog/` — local-only Bun authoring/publishing CLI for agents; excluded from app typecheck/lint and the Worker build (`next.config.mjs`).
 - `.env` / `.dev.vars` — local secrets, never committed or uploaded.
 
 ## Working Agreements
@@ -35,10 +35,10 @@ Run from the repository root.
 - `@/*` maps to the repo root (e.g. `@/lib`, `@/components`).
 - Adding blog categories: edit the `categories` list in `lib/blog/config.ts`; the DB enum in `lib/db/blog-schema.ts` must stay in sync via a migration.
 - Code style is prettier-like (4-space indent in portfolio code, 2-space in `lib/blog`); match the surrounding file.
-- All blog content changes go through the `bun run blog` workflow in `tools/blog/AGENTS.md` — never write directly to R2, the `blog_posts` table, or `tools/blog/.work/`.
-- The blog DB mirror is not synchronized by the publisher; expect it to be incomplete when giving coverage/related results.
+- All blog content changes go through the `bun run blog publish` workflow in `tools/blog/AGENTS.md` — never write directly to R2 or the `blog_posts` table.
+- The blog DB mirror is kept synchronized automatically by `bun run blog publish`.
 - No `Cache Everything`/edge TTL overrides for `/blog*`, `/llms.txt`, or `/sitemap.xml`; blog reader freshness relies on existing cache-control semantics.
-- Local R2 S3 and OpenRouter credentials belong only in local `.env`/`.dev.vars` — never in Wrangler bindings, tracked files, or blog drafts (the R2 bucket is public).
+- Local R2 S3 credentials belong only in local `.env`/`.dev.vars` — never in Wrangler bindings or tracked files.
 
 ## Definition of Done
 

@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { HEAD_KEY } from "./config";
+import { HEAD_KEY, MANIFEST_KEY } from "./config";
 import { headSchema, manifestSchema, parsePost, serializePost, type Entry } from "./contract";
 
 interface ContentBucket { get(key: string): Promise<{ text(): Promise<string> } | null> }
@@ -18,8 +18,12 @@ async function read(key: string) {
 // fetch cache, CDN JSON cache, or stale-on-error layer in the published read path.
 export const getPublished = cache(async () => {
   try {
+    const directManifest = await read(MANIFEST_KEY);
+    if (directManifest) {
+      return manifestSchema.parse(JSON.parse(await directManifest.text()));
+    }
     const object = await read(HEAD_KEY);
-    if (!object) throw new Error("Blog has not been initialized (active head missing)");
+    if (!object) throw new Error("Blog has not been initialized (manifest or active head missing)");
     const head = headSchema.parse(JSON.parse(await object.text()));
     const manifest = await read(head.manifest);
     if (!manifest) throw new Error("Active manifest missing");

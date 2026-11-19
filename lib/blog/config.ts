@@ -34,6 +34,9 @@ export const cdnUrl = (key: string) => {
 export function coverUrl(src: string) {
   return src.startsWith("https://") ? src : cdnUrl(src);
 }
+export const MANIFEST_KEY = "blog/manifest.json";
+export const POSTS_PREFIX = "blog/posts/";
 export const HEAD_KEY = "blog/head.json";
 export const OBJECT_PREFIX = "blog/objects/";
+export const LOCK_KEY = "blog/publishing.lock";
 export const GRACE_MS = 15 * 60 * 1000;

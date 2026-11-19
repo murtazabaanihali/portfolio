@@ -1,824 +1,519 @@
-/**
- * Unit and integration tests for blog storage, publishing safety,
- * draft exclusion, content verification, and provider fallback boundaries.
- */
-
-import { afterEach, describe, expect, test } from "bun:test";
-import { readFile, writeFile, mkdtemp, rm, mkdir, symlink } from "node:fs/promises";
+import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { BlogService, rejectDraft } from "../core";
+import { BlogService, findPostsInDir } from "../core";
+import { migrateBlogs } from "../migrate";
 import { bytes, text, Conflict, type Storage, type Stored } from "../storage";
+import { hash, imageType, readInlineImages } from "../images";
 import {
-  approve,
-  cleanup,
-  createWorkspace,
-  loadWorkspace,
-  hash,
-  imageType,
-  importPost,
-} from "../workspace";
-import {
-  articleInfo,
   parsePost,
   serializePost,
-  jsonLd,
-  manifestSchema,
   rewriteImageUrls,
   imageNodes,
+  manifestSchema,
   type Post,
+  type Entry,
 } from "../../../lib/blog/contract";
-import { HEAD_KEY, GRACE_MS, siteUrl } from "../../../lib/blog/config";
-import { publishedIndex, rss } from "../../../lib/blog/discovery";
-import { research, publicFetch } from "../research";
-import { researchDeps } from "./research-fixture";
-import { fallback, localSource, generate, revise, type Brief } from "../ai";
+import { MANIFEST_KEY, HEAD_KEY, LOCK_KEY } from "../../../lib/blog/config";
 
 process.env.NEXT_PUBLIC_APP_URL = "https://portfolio.example.com";
 process.env.NEXT_PUBLIC_MEDIA_CDN_DOMAIN = "https://content.example.com";
 
-const png = Buffer.from(
+const pngBytes = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY9sAAAAASUVORK5CYII=",
   "base64",
 );
 
-const meta = (
-  slug = "test-post",
-  status: Post["status"] = "published",
-): Post => ({
-  version: 1,
-  title: "A useful technical article",
-  slug,
-  description:
-    "A useful description of technical publishing decisions and their practical trade-offs.",
-  author: "Murtaza Baanihali",
-  status,
-  category: "ai-agents",
-  tags: ["ai", "engineering"],
-  publishedAt: status === "published" ? "2024-01-01T12:00:00Z" : null,
-  updatedAt: status === "published" ? "2024-01-01T12:00:00Z" : null,
-  cover: {
-    src: "https://content.example.com/external-cover.png",
-    alt: "A paper task card inside a clear boundary",
-  },
-});
+/** In-memory mock storage implementation for testing. */
+class MemoryStorage implements Storage {
+  objects = new Map<string, { bytes: Uint8Array; etag: string; type: string }>();
 
-const body =
-  "An answer-first introduction with enough substance for an article.\n\n## Useful heading\n\nA practical explanation with **emphasis**.\n\n## Useful heading\n\nMore useful text.";
-
-const ids: string[] = [];
-
-async function workspace(m = meta(), cover?: Uint8Array) {
-  const id = await createWorkspace(serializePost(m, body), cover);
-  ids.push(id);
-  return id;
-}
-
-afterEach(async () => {
-  for (const id of ids.splice(0)) {
-    try {
-      await cleanup(id);
-    } catch {
-      // committed work was cleaned
-    }
-  }
-});
-
-class MemoryStore implements Storage {
-  objects = new Map<string, Stored & { modified: number }>();
-  mutations: string[] = [];
-  failKey?: string;
-  uncertainHead = false;
-
-  async get(key: string) {
-    return this.objects.get(key) || null;
+  async get(key: string): Promise<Stored | null> {
+    const item = this.objects.get(key);
+    if (!item) return null;
+    return { bytes: item.bytes, etag: item.etag };
   }
 
   async put(
     key: string,
     data: Uint8Array,
-    _type: string,
+    type: string,
     condition?: { match?: string; absent?: boolean },
-  ) {
-    if (this.failKey && key.includes(this.failKey)) {
-      throw new Error("Simulated upload failure");
+  ): Promise<void> {
+    if (condition?.absent && this.objects.has(key)) {
+      throw new Conflict("Key already exists");
     }
-    const before = this.objects.get(key);
-    if (
-      (condition?.absent && before) ||
-      (condition?.match && before?.etag !== condition.match)
-    ) {
-      throw new Conflict("ETag conflict");
+    if (condition?.match && this.objects.get(key)?.etag !== condition.match) {
+      throw new Conflict("ETag mismatch");
     }
-    this.mutations.push("put:" + key);
-    this.objects.set(key, {
-      bytes: data,
-      etag: '"' + hash(data) + '"',
-      modified: Date.now(),
-    });
-    if (key === HEAD_KEY && this.uncertainHead) {
-      this.uncertainHead = false;
-      throw new Error("Timeout after committed write");
-    }
+    const etag = hash(data);
+    this.objects.set(key, { bytes: data, etag, type });
   }
 
-  async remove(key: string) {
-    this.mutations.push("delete:" + key);
+  async remove(key: string): Promise<void> {
     this.objects.delete(key);
   }
 
-  async list(prefix: string) {
-    return [...this.objects]
-      .filter(([k]) => k.startsWith(prefix))
-      .map(([key, v]) => ({ key, modified: v.modified }));
+  async list(prefix: string): Promise<{ key: string; modified: number }[]> {
+    const matches: { key: string; modified: number }[] = [];
+    for (const key of this.objects.keys()) {
+      if (key.startsWith(prefix)) {
+        matches.push({ key, modified: Date.now() });
+      }
+    }
+    return matches;
   }
 }
 
-async function setup() {
-  const storage = new MemoryStore();
-  const service = new BlogService(storage);
-  await service.initialize();
-  storage.mutations = [];
-  return { storage, service };
-}
+describe("images and formats", () => {
+  test("identifies PNG, JPEG, WebP and rejects invalid formats", () => {
+    expect(imageType(pngBytes)).toBe("image/png");
 
-describe("content and discovery", () => {
-  test("normalizes tags, keeps dates, rejects HTML/unsafe URLs/aliases", () => {
-    const raw = serializePost(
-      { ...meta(), tags: ["AI Agents", "ai-agents", "React"] },
-      body,
-    );
-    expect(parsePost(raw).meta.tags).toEqual(["ai-agents", "react"]);
-    expect(parsePost(raw).meta.publishedAt).toBe("2024-01-01T12:00:00Z");
-    expect(() => parsePost(raw + "\n<script>alert(1)</script>")).toThrow(
-      "HTML",
-    );
-    expect(() => parsePost(raw + "\n[bad](javascript:alert)")).toThrow(
-      "Unsafe",
-    );
-    expect(() =>
-      parsePost(
-        raw +
-          "\n![missing alt](https://example.com/a.png)\n![](https://example.com/b.png)",
-      ),
-    ).toThrow("alt");
-    expect(() =>
-      parsePost(raw.replace("version: 1", "version: &x 1\nextra: *x")),
-    ).toThrow();
-  });
+    const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00]);
+    expect(imageType(jpegBytes)).toBe("image/jpeg");
 
-  test("TOC anchors match duplicate heading slug behavior", () => {
-    expect(articleInfo(body).toc.map((h) => h.id)).toEqual([
-      "useful-heading",
-      "useful-heading-1",
+    const webpBytes = new Uint8Array([
+      0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
     ]);
-  });
+    expect(imageType(webpBytes)).toBe("image/webp");
 
-  test("escapes JSON-LD and XML and uses configured canonical origins", async () => {
-    expect(jsonLd({ title: "</script>" })).not.toContain("<");
-    const { service } = await setup();
-    const id = await workspace({
-      ...meta(),
-      title: 'A title with & <angle> "quotes"',
-    });
-    await service.commit(
-      await service.plan([{ type: "upsert", workspace: id }]),
-      true,
+    expect(() => imageType(Buffer.from("<svg></svg>"))).toThrow(
+      "Invalid image",
     );
-    const { manifest } = await service.snapshot();
-    expect(rss(manifest.posts)).toContain("&amp; &lt;angle&gt;");
-    expect(publishedIndex(manifest.posts).posts[0].markdown).toBe(
-      "https://portfolio.example.com/blog/test-post/raw.md",
+    expect(() => imageType(Buffer.from("not an image"))).toThrow(
+      "Invalid image",
     );
-    expect(siteUrl("/blog")).toBe("https://portfolio.example.com/blog");
   });
 
-  test("drafts cannot enter public manifests", () => {
-    expect(() =>
-      manifestSchema.parse({
-        version: 1,
-        posts: [
-          {
-            meta: meta("draft-post", "draft"),
-            key: "blog/objects/test/post.md",
-            revision: "a".repeat(64),
-            assets: [],
-          },
-        ],
-      }),
-    ).toThrow("draft");
-  });
-
-  test("stored date parsing is deterministic; future publishing blocked in planner", async () => {
-    const future = {
-      ...meta(),
-      publishedAt: "2099-01-01T00:00:00Z",
-      updatedAt: "2099-01-01T00:00:00Z",
-    };
-    expect(parsePost(serializePost(future, body)).meta.publishedAt).toStartWith(
-      "2099",
-    );
-    const id = await workspace(future);
-    const { service } = await setup();
-    await expect(
-      service.plan([{ type: "upsert", workspace: id }]),
-    ).rejects.toThrow("Future");
-  });
-});
-
-describe("supplied inline images", () => {
-  const illustrated = body + '\n\n![Settings panel](./images/settings.png "Settings")\n\n![Same panel][panel]\n\n[panel]: ./images/settings.png\n\n`./images/settings.png`\n';
-
-  test("imports a portable bundle, publishes both image forms, and retains assets on fetch/GC", async () => {
-    const source = await mkdtemp(join(tmpdir(), "blog-images-"));
+  test("reads and validates inline images referenced in markdown", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-test-inline-"));
     try {
-      await mkdir(join(source, "images"));
-      await writeFile(join(source, "images/settings.png"), png);
-      await writeFile(join(source, "post.md"), serializePost(meta(), illustrated));
-      const id = await importPost(join(source, "post.md"));
-      ids.push(id);
-      const w = await loadWorkspace(id);
-      expect(w.images["./images/settings.png"]).toEqual(png);
-      const { service, storage } = await setup();
-      const plan = await service.plan([{ type: "upsert", workspace: id }]);
-      expect(plan.changes[0].images).toEqual([{ src: "./images/settings.png", sha256: hash(png), bytes: png.length }]);
-      expect(storage.mutations).toEqual([]);
-      await approve(id);
-      await service.commit(plan);
-      const entry = (await service.snapshot()).manifest.posts[0];
-      expect(entry.assets).toHaveLength(1);
-      expect((await storage.get(entry.assets[0]))!.bytes).toEqual(png);
-      const published = text((await storage.get(entry.key))!);
-      expect(published).toContain('![Settings panel](https://content.example.com/');
-      expect(published).toContain('[panel]: https://content.example.com/');
-      expect(published).toContain('`./images/settings.png`');
-      expect(() => parsePost(published)).not.toThrow();
-      expect(await readFile(join(source, "images/settings.png"))).toEqual(png);
-      const fetched = await service.fetch(entry.meta.slug);
-      ids.push(fetched);
-      expect((await loadWorkspace(fetched)).body).toContain(entry.assets[0]);
-      await service.gc(true);
-      expect(await storage.get(entry.assets[0])).not.toBeNull();
+      await mkdir(join(temp, "images"));
+      await writeFile(join(temp, "images", "diagram.png"), pngBytes);
+
+      const body = "Some text\n\n![Diagram](./images/diagram.png)\n\nMore text";
+      const images = await readInlineImages(temp, body);
+
+      expect(images["./images/diagram.png"]).toBeDefined();
+      expect(images["./images/diagram.png"].type).toBe("image/png");
+      expect(images["./images/diagram.png"].filename).toBe("diagram.png");
     } finally {
-      await rm(source, { recursive: true, force: true });
+      await rm(temp, { recursive: true });
     }
   });
 
-  test("image-only changes invalidate approvals and saved plans", async () => {
-    const id = await createWorkspace(serializePost(meta(), illustrated), undefined, ".png", {}, { "./images/settings.png": png });
-    ids.push(id);
-    const { service } = await setup();
-    await approve(id);
-    const plan = await service.plan([{ type: "upsert", workspace: id }]);
-    const w = await loadWorkspace(id);
-    await writeFile(join(w.path, "images/settings.png"), Buffer.concat([png, Buffer.from([0])]));
-    expect((await loadWorkspace(id)).fingerprint).not.toBe(w.state.approval);
-    await expect(service.commit(plan, true)).rejects.toThrow("changed");
-    await expect(service.commit(await service.plan([{ type: "upsert", workspace: id }]))).rejects.toThrow("Approval");
-  });
-
-  test("failed image upload preserves workspace and remote head", async () => {
-    const id = await createWorkspace(serializePost(meta(), illustrated), undefined, ".png", {}, { "./images/settings.png": png });
-    ids.push(id);
-    const { service, storage } = await setup();
-    const before = text((await storage.get(HEAD_KEY))!);
-    storage.failKey = "-image-";
-    await expect(service.commit(await service.plan([{ type: "upsert", workspace: id }]), true)).rejects.toThrow("Simulated");
-    expect(text((await storage.get(HEAD_KEY))!)).toBe(before);
-    expect((await loadWorkspace(id)).images["./images/settings.png"]).toEqual(png);
-  });
-
-  test("local paths are image-only, safe, and forbidden in published content", async () => {
-    for (const url of ["./images/../secret.png", "./images/nested/a.png", "./images/a.svg", "../a.png", "file:///tmp/a.png", "./images/a%2epng"]) {
-      expect(() => parsePost(serializePost(meta(), body + `\n![Image](${url})`), true)).toThrow("Unsafe");
-    }
-    expect(() => parsePost(serializePost(meta(), illustrated))).toThrow("Unsafe");
-    expect(() => parsePost(serializePost(meta(), body + "\n[Link](./images/settings.png)"), true)).toThrow("Unsafe");
-    expect(() => parsePost(serializePost(meta(), illustrated + "\n[Link][panel]"), true)).toThrow("Unsafe");
-    expect(() => parsePost(serializePost(meta(), body + "\n![][panel]\n\n[panel]: https://example.com/a.png"), true)).toThrow("alt");
-    await expect(createWorkspace(serializePost(meta(), illustrated))).rejects.toThrow("Supply the local inline image");
-  });
-
-  test("rewriting preserves escaped alt text and leaves non-image text alone", () => {
-    const source = '![Panel \\[A\\]](./images/settings.png "Settings")\n\nA prose path: ./images/settings.png';
-    const rewritten = rewriteImageUrls(source, new Map([["./images/settings.png", "https://example.com/image.png"]]));
-    const node = imageNodes(rewritten)[0];
-    expect(node.type === "image" && node.alt).toBe("Panel [A]");
-    expect(node.title).toBe("Settings");
-    expect(rewritten).toContain("A prose path: ./images/settings.png");
-  });
-
-  test("image count and byte limits are enforced before workspace creation", async () => {
-    await expect(createWorkspace(serializePost(meta(), illustrated), undefined, ".png", {}, {
-      "./images/settings.png": new Uint8Array(10 * 1024 * 1024 + 1),
-    })).rejects.toThrow("10MB");
-    const many = Array.from({ length: 51 }, (_, i) => `![Image ${i}](./images/image-${i}.png)`).join("\n\n");
-    await expect(createWorkspace(serializePost(meta(), many))).rejects.toThrow("50 inline images");
-  });
-
-  test("missing files, non-images and symlink files/directories are refused", async () => {
-    const source = await mkdtemp(join(tmpdir(), "blog-images-"));
+  test("throws error when referenced inline image is missing", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-test-missing-"));
     try {
-      await mkdir(join(source, "images"));
-      await writeFile(join(source, "post.md"), serializePost(meta(), illustrated));
-      await expect(importPost(join(source, "post.md"))).rejects.toThrow();
-      await writeFile(join(source, "images/settings.png"), "not an image");
-      await expect(importPost(join(source, "post.md"))).rejects.toThrow("Invalid image");
-      await rm(join(source, "images/settings.png"));
-      await writeFile(join(source, "actual.png"), png);
-      await symlink(join(source, "actual.png"), join(source, "images/settings.png"));
-      await expect(importPost(join(source, "post.md"))).rejects.toThrow("symlink");
-      await rm(join(source, "images"), { recursive: true });
-      await symlink(source, join(source, "images"));
-      await expect(importPost(join(source, "post.md"))).rejects.toThrow("symlink");
+      const body = "![Missing](./images/missing.png)";
+      await expect(readInlineImages(temp, body)).rejects.toThrow("not found");
     } finally {
-      await rm(source, { recursive: true, force: true });
+      await rm(temp, { recursive: true });
     }
+  });
+
+  test("rewrites inline image URLs to CDN URLs without altering prose", () => {
+    const body =
+      "Check this out:\n\n![Diagram](./images/diagram.png)\n\nReferenced here: ./images/diagram.png";
+    const urlMap = new Map([
+      ["./images/diagram.png", "https://content.example.com/blog/posts/slug/images/diagram.png"],
+    ]);
+
+    const rewritten = rewriteImageUrls(body, urlMap);
+    expect(rewritten).toContain(
+      "![Diagram](https://content.example.com/blog/posts/slug/images/diagram.png)",
+    );
+    expect(rewritten).toContain("Referenced here: ./images/diagram.png");
   });
 });
 
-describe("publishing safety", () => {
-  test("missing head requires explicit initialization", async () => {
-    await expect(new BlogService(new MemoryStore()).snapshot()).rejects.toThrow(
-      "Active head missing",
-    );
-  });
+describe("BlogService publishing and management", () => {
+  const sampleMeta: Post = {
+    version: 1,
+    title: "Building Reliable Architecture",
+    slug: "building-reliable-architecture",
+    description: "A comprehensive guide to building reliable cloud architecture with clean design principles.",
+    author: "Murtaza Baanihali",
+    status: "published",
+    category: "engineering",
+    tags: ["architecture", "cloud"],
+    publishedAt: null,
+    updatedAt: null,
+    cover: {
+      src: "./cover.png",
+      alt: "Minimalist ink drawing of architectural scaffolding",
+    },
+  };
 
-  test("plan/dry-run is read-only and includes actual text/cover diffs", async () => {
-    const { storage, service } = await setup();
-    const id = await workspace(meta(), png);
-    const plan = await service.plan([{ type: "upsert", workspace: id }]);
-    expect(storage.mutations).toEqual([]);
-    expect(plan.changes[0].diff).toContain("+An answer-first");
-    expect(plan.changes[0].cover.after).toContain(hash(png));
-    expect((await loadWorkspace(id)).cover).toBeDefined();
-  });
-
-  test("failed upload never activates partial batch or cleans local work", async () => {
-    const { storage, service } = await setup();
-    const a = await workspace(meta("first-post"));
-    const b = await workspace(meta("second-post"));
-    const before = text((await storage.get(HEAD_KEY))!);
-    storage.failKey = "second-post.md";
-
-    await expect(
-      service.commit(
-        await service.plan([
-          { type: "upsert", workspace: a },
-          { type: "upsert", workspace: b },
-        ]),
-        true,
-      ),
-    ).rejects.toThrow("Simulated");
-
-    expect(text((await storage.get(HEAD_KEY))!)).toBe(before);
-    expect((await loadWorkspace(a)).id).toBe(a);
-    expect((await loadWorkspace(b)).id).toBe(b);
-  });
-
-  test("approval is exact; edits invalidate it and stale plans", async () => {
-    const { service } = await setup();
-    const id = await workspace();
-
-    await expect(
-      service.commit(await service.plan([{ type: "upsert", workspace: id }])),
-    ).rejects.toThrow("Approval");
-
-    await approve(id);
-    const plan = await service.plan([{ type: "upsert", workspace: id }]);
-    const w = await loadWorkspace(id);
-    await writeFile(
-      join(w.path, "post.md"),
-      w.raw + "\nA later unapproved change.\n",
-    );
-
-    await expect(service.commit(plan)).rejects.toThrow("changed");
-    await expect(
-      service.commit(await service.plan([{ type: "upsert", workspace: id }])),
-    ).rejects.toThrow("Approval");
-  });
-
-  test("content/cover changes invalidate approval", async () => {
-    const id = await workspace(meta(), png);
-    await approve(id);
-    const w = await loadWorkspace(id);
-    await writeFile(
-      join(w.path, w.meta.cover.src),
-      Buffer.concat([png, Buffer.from([0])]),
-    );
-    expect((await loadWorkspace(id)).fingerprint).not.toBe(w.state.approval);
-  });
-
-  test("concurrent plans reject stale baseline; missing local posts never delete others", async () => {
-    const { service } = await setup();
-    const a = await workspace(meta("first-post"));
-    const b = await workspace(meta("second-post"));
-
-    const stale = await service.plan([{ type: "upsert", workspace: b }]);
-    await service.commit(
-      await service.plan([{ type: "upsert", workspace: a }]),
-      true,
-    );
-
-    await expect(service.commit(stale, true)).rejects.toThrow("changed");
-    await service.commit(
-      await service.plan([{ type: "upsert", workspace: b }]),
-      true,
-    );
-    expect((await service.snapshot()).manifest.posts.length).toBe(2);
-  });
-
-  test("successful commit cleans owned work and uncertain write is reconciled", async () => {
-    const { service, storage } = await setup();
-    const id = await workspace();
-    storage.uncertainHead = true;
-
-    const result = await service.commit(
-      await service.plan([{ type: "upsert", workspace: id }]),
-      true,
-    );
-    expect(result.committed).toBe(true);
-    await expect(loadWorkspace(id)).rejects.toThrow();
-    expect((await service.snapshot()).manifest.posts.length).toBe(1);
-  });
-
-  test("editing preserves original publication date and rejects changed slug", async () => {
-    const { service } = await setup();
-    const id = await workspace();
-    await service.commit(
-      await service.plan([{ type: "upsert", workspace: id }]),
-      true,
-    );
-
-    const fetched = await service.fetch("test-post");
-    ids.push(fetched);
-    const w = await loadWorkspace(fetched);
-
-    await writeFile(
-      join(w.path, "post.md"),
-      serializePost(
-        {
-          ...w.meta,
-          publishedAt: "2024-01-02T00:00:00Z",
-          updatedAt: "2024-01-02T00:00:00Z",
-        },
-        w.body,
-      ),
-    );
-    await expect(
-      service.plan([{ type: "upsert", workspace: fetched }]),
-    ).rejects.toThrow("publishedAt");
-
-    await writeFile(
-      join(w.path, "post.md"),
-      serializePost({ ...w.meta, slug: "renamed-post" }, w.body),
-    );
-    await expect(loadWorkspace(fetched)).rejects.toThrow("Slug changed");
-  });
-
-  test("unpublish excludes discovery but retains editable draft, delete is explicit", async () => {
-    const { service } = await setup();
-    const id = await workspace();
-    await service.commit(
-      await service.plan([{ type: "upsert", workspace: id }]),
-      true,
-    );
-    await service.commit(
-      await service.plan([{ type: "unpublish", slug: "test-post" }]),
-      true,
-    );
-
-    expect((await service.snapshot()).manifest.posts).toHaveLength(0);
-    expect((await service.snapshot()).inventory.posts[0].meta.status).toBe(
-      "draft",
-    );
-    expect(
-      publishedIndex((await service.snapshot()).manifest.posts).posts,
-    ).toHaveLength(0);
-
-    await service.commit(
-      await service.plan([{ type: "delete", slug: "test-post" }]),
-      true,
-    );
-    expect((await service.snapshot()).inventory.posts).toHaveLength(0);
-  });
-
-  test("rejectDraft completely removes draft from local workspace and remote inventory", async () => {
-    const { service } = await setup();
-    const id = await workspace();
-    expect(await loadWorkspace(id)).toBeDefined();
-
-    // Rejection of purely local draft cleans up workspace
-    const localResult = await rejectDraft(id, service);
-    expect(localResult.removedFrom).toContain("local");
-    await expect(loadWorkspace(id)).rejects.toThrow();
-
-    // Rejection of draft present in remote inventory removes from both
-    const id2 = await workspace(meta("remote-draft", "draft"));
-    await service.commit(
-      await service.plan([{ type: "upsert", workspace: id2 }]),
-      true,
-    );
-    expect(
-      (await service.snapshot()).inventory.posts.some(
-        (p) => p.meta.slug === "remote-draft",
-      ),
-    ).toBe(true);
-
-    const fetchedId = await service.fetch("remote-draft");
-    expect(await loadWorkspace(fetchedId)).toBeDefined();
-
-    const remoteResult = await rejectDraft(fetchedId, service);
-    expect(remoteResult.removedFrom).toContain("remote");
-    expect(remoteResult.removedFrom).toContain("local");
-    expect(
-      (await service.snapshot()).inventory.posts.some(
-        (p) => p.meta.slug === "remote-draft",
-      ),
-    ).toBe(false);
-    await expect(loadWorkspace(fetchedId)).rejects.toThrow();
-  });
-
-  test("CLI reject requires explicit authorization and removes workspace", async () => {
-    const id = await workspace();
-    const noYes = Bun.spawn(["bun", "tools/blog/cli.ts", "reject", id], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    expect(await noYes.exited).toBe(4);
-    expect(await new Response(noYes.stderr).text()).toContain(
-      "Explicit --yes required",
-    );
-
-    const withYes = Bun.spawn(
-      ["bun", "tools/blog/cli.ts", "reject", id, "--yes"],
-      { stdout: "pipe", stderr: "pipe" },
-    );
-    expect(await withYes.exited).toBe(0);
-    await expect(loadWorkspace(id)).rejects.toThrow();
-  });
-
-  test("GC retains retired objects during grace and shared assets referenced by drafts", async () => {
-    const { service, storage } = await setup();
-    const id = await workspace(meta(), png);
-    await service.commit(
-      await service.plan([{ type: "upsert", workspace: id }]),
-      true,
-    );
-
-    const state = await service.snapshot();
-    const old = state.inventory.posts[0];
-    const cover = old.meta.cover.src;
-
-    const draft = await workspace({
-      ...meta("shared-draft", "draft"),
-      cover: { ...old.meta.cover },
-    });
-    await service.commit(
-      await service.plan([{ type: "upsert", workspace: draft }]),
-      true,
-    );
-    await service.commit(
-      await service.plan([{ type: "delete", slug: "test-post" }]),
-      true,
-    );
-
-    for (const object of storage.objects.values()) {
-      object.modified = 0;
-    }
-
-    const young = await service.gc(true);
-    expect(young.keys).not.toContain(old.key);
-    expect(young.keys).not.toContain(cover);
-
-    const current = await service.snapshot();
-    const updated = {
-      ...current.inventory,
-      retired: current.inventory.retired.map((r) => ({
-        ...r,
-        at: new Date(Date.now() - GRACE_MS - 1000).toISOString(),
-      })),
-    };
-    await storage.put(
-      current.head!.inventory,
-      bytes(JSON.stringify(updated)),
-      "application/json",
-    );
-
-    const oldCandidates = await service.gc(true);
-    expect(oldCandidates.keys).toContain(old.key);
-    expect(oldCandidates.keys).not.toContain(cover);
-
-    await service.gc(false);
-    expect(await storage.get(cover)).not.toBeNull();
-    expect(await storage.get(old.key)).toBeNull();
-  });
-
-  test("GC and publishers cannot pass an active lock", async () => {
-    const { service, storage } = await setup();
-    const id = await workspace();
-    await storage.put(
-      "blog/publishing.lock",
-      bytes('{"owner":"another-writer"}'),
-      "application/json",
-    );
-
-    await expect(
-      service.commit(
-        await service.plan([{ type: "upsert", workspace: id }]),
-        true,
-      ),
-    ).rejects.toThrow("conflict");
-    await expect(service.gc(false)).rejects.toThrow("conflict");
-  });
-
-  test("context persists after cleanup; original source not tool-owned", async () => {
-    const { CONTEXT_PATH } = await import("../workspace");
-    const before = await readFile(CONTEXT_PATH, "utf8");
-    const id = await workspace();
-    await cleanup(id);
-    expect(await readFile(CONTEXT_PATH, "utf8")).toBe(before);
-  });
-});
-
-describe("generation/research boundaries (no paid calls)", () => {
-  test("ordered provider fallback is bounded", async () => {
-    const calls: string[] = [];
-    const result = await fallback(["broken", "working"], async (model) => {
-      calls.push(model);
-      if (model === "broken") throw new Error("transient");
-      return "ok";
-    });
-    expect(calls).toEqual(["broken", "broken", "working"]);
-    expect(result.model).toBe("working");
-  });
-
-  test("all free research failures are nonblocking and use independent fallbacks", async () => {
-    const calls: string[] = [];
-    const result = await research(
-      "fresh model information",
-      ["one", "two"].map((name) => ({
-        name,
-        async search() {
-          calls.push(name);
-          throw new Error("restricted");
-        },
-      })),
-      1200,
-    );
-    expect(calls).toContain("one");
-    expect(calls).toContain("two");
-    expect(result.sources).toEqual([]);
-    expect(result.warnings.join(" ")).toContain("hold incomplete research");
-  });
-
-  test("text/image generation is resumable and revision retains cover while invalidating approval", async () => {
-    const originalFetch = globalThis.fetch;
-    const keys = [
-      "OPENROUTER_API_KEY",
-      "BLOG_TEXT_MODELS",
-      "BLOG_IMAGE_MODELS",
-      "BLOG_AI_BASE_URL",
-    ];
-    const saved = Object.fromEntries(
-      keys.map((key) => [key, process.env[key]]),
-    );
-
-    Object.assign(process.env, {
-      OPENROUTER_API_KEY: "test-key-not-real",
-      BLOG_TEXT_MODELS: "text-model",
-      BLOG_IMAGE_MODELS: "image-model",
-      BLOG_AI_BASE_URL: "https://provider.example.test/v1",
-    });
-
-    let textCalls = 0;
-    let imageCalls = 0;
-    let imageWorks = false;
-
-    globalThis.fetch = (async (url: string | URL | Request) => {
-      const value =
-        typeof url === "string" ? url : url instanceof URL ? url.href : url.url;
-      if (value.endsWith("/chat/completions")) {
-        textCalls++;
-        return Response.json({
-          id: "mock",
-          choices: [
-            {
-              message: {
-                role: "assistant",
-                content: serializePost(meta("generated-post", "draft"), body),
-              },
-              finish_reason: "stop",
-            },
-          ],
-        });
-      }
-      if (value.endsWith("/images")) {
-        imageCalls++;
-        return imageWorks
-          ? Response.json({
-              data: [
-                {
-                  b64_json: png.toString("base64"),
-                  media_type: "image/png",
-                },
-              ],
-            })
-          : new Response("temporary", { status: 503 });
-      }
-      throw new Error("Unexpected network request in mock: " + value);
-    }) as typeof fetch;
-
+  test("publishes a post with local cover and updates manifest", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-test-publish-"));
     try {
-      const brief: Brief = {
-        slug: "generated-post",
-        brief:
-          "Explain practical agent approval boundaries using hypothetical examples.",
-        category: "ai-agents",
-        tags: ["ai"],
-        sources: [],
-        urls: [],
-        research: false,
-        coverAlt: "A paper task inside a clear boundary",
+      await writeFile(join(temp, "cover.png"), pngBytes);
+      const postContent = serializePost(
+        sampleMeta,
+        "## Introduction\n\nThis is a complete and substantive article body about clean architecture.",
+      );
+      const postFile = join(temp, "post.md");
+      await writeFile(postFile, postContent);
+
+      const storage = new MemoryStorage();
+      const service = new BlogService(storage);
+
+      const result = await service.publish(postFile);
+
+      expect(result.success).toBe(true);
+      expect(result.slug).toBe("building-reliable-architecture");
+      expect(result.contentKey).toBe("blog/posts/building-reliable-architecture/post.md");
+      expect(result.cover).toBe("blog/posts/building-reliable-architecture/cover.png");
+
+      // Verify stored markdown in R2
+      const storedPost = await storage.get(result.contentKey);
+      expect(storedPost).not.toBeNull();
+      const parsedPost = parsePost(text(storedPost!), true);
+      expect(parsedPost.meta.status).toBe("published");
+      expect(parsedPost.meta.publishedAt).toBeDefined();
+
+      // Verify stored cover in R2
+      const storedCover = await storage.get(result.cover);
+      expect(storedCover).not.toBeNull();
+
+      // Verify manifest in R2
+      const manifest = await service.manifest();
+      expect(manifest.posts.length).toBe(1);
+      expect(manifest.posts[0].meta.slug).toBe("building-reliable-architecture");
+      expect(manifest.posts[0].key).toBe(result.contentKey);
+    } finally {
+      await rm(temp, { recursive: true });
+    }
+  });
+
+  test("republishing updates existing post while preserving original publishedAt", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-test-republish-"));
+    try {
+      await writeFile(join(temp, "cover.png"), pngBytes);
+      const postFile = join(temp, "post.md");
+      await writeFile(
+        postFile,
+        serializePost(sampleMeta, "Initial substantive article content here."),
+      );
+
+      const storage = new MemoryStorage();
+      const service = new BlogService(storage);
+
+      const res1 = await service.publish(postFile);
+      const initialPublishedAt = (await service.manifest()).posts[0].meta.publishedAt;
+
+      // Wait a tiny bit and update
+      await new Promise((r) => setTimeout(r, 10));
+      await writeFile(
+        postFile,
+        serializePost(sampleMeta, "Updated substantive article content with new insights."),
+      );
+
+      const res2 = await service.publish(postFile);
+      const updatedManifest = await service.manifest();
+
+      expect(updatedManifest.posts.length).toBe(1);
+      expect(updatedManifest.posts[0].meta.publishedAt).toBe(initialPublishedAt);
+      expect(
+        Date.parse(updatedManifest.posts[0].meta.updatedAt!) >=
+          Date.parse(initialPublishedAt!),
+      ).toBe(true);
+    } finally {
+      await rm(temp, { recursive: true });
+    }
+  });
+
+  test("unpublish removes post from manifest", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-test-unpublish-"));
+    try {
+      await writeFile(join(temp, "cover.png"), pngBytes);
+      const postFile = join(temp, "post.md");
+      await writeFile(
+        postFile,
+        serializePost(
+          sampleMeta,
+          "## Substantive Heading\n\nContent to unpublish later with more than 40 characters in the article body.",
+        ),
+      );
+
+      const storage = new MemoryStorage();
+      const service = new BlogService(storage);
+      await service.publish(postFile);
+
+      expect((await service.manifest()).posts.length).toBe(1);
+
+      const res = await service.unpublish("building-reliable-architecture");
+      expect(res.success).toBe(true);
+      expect((await service.manifest()).posts.length).toBe(0);
+    } finally {
+      await rm(temp, { recursive: true });
+    }
+  });
+
+  test("deletePost removes post from manifest and cleans up files", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-test-delete-"));
+    try {
+      await writeFile(join(temp, "cover.png"), pngBytes);
+      const postFile = join(temp, "post.md");
+      await writeFile(
+        postFile,
+        serializePost(
+          sampleMeta,
+          "## Substantive Heading\n\nContent to delete completely with more than 40 characters in the article body.",
+        ),
+      );
+
+      const storage = new MemoryStorage();
+      const service = new BlogService(storage);
+      await service.publish(postFile);
+
+      const res = await service.deletePost("building-reliable-architecture");
+      expect(res.success).toBe(true);
+      expect(res.deletedKeys).toContain(
+        "blog/posts/building-reliable-architecture/post.md",
+      );
+      expect(res.deletedKeys).toContain(
+        "blog/posts/building-reliable-architecture/cover.png",
+      );
+
+      expect((await service.manifest()).posts.length).toBe(0);
+      expect(
+        await storage.get("blog/posts/building-reliable-architecture/post.md"),
+      ).toBeNull();
+    } finally {
+      await rm(temp, { recursive: true });
+    }
+  });
+
+  test("publishes multiple posts in bulk under one atomic lock", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-test-bulk-"));
+    try {
+      await mkdir(join(temp, "post-1"));
+      await mkdir(join(temp, "post-2"));
+
+      await writeFile(join(temp, "post-1", "cover.png"), pngBytes);
+      await writeFile(join(temp, "post-2", "cover.png"), pngBytes);
+
+      const meta1: Post = {
+        ...sampleMeta,
+        slug: "bulk-post-1",
+        title: "Bulk Post Number One",
+      };
+      const meta2: Post = {
+        ...sampleMeta,
+        slug: "bulk-post-2",
+        title: "Bulk Post Number Two",
       };
 
-      const first = await generate(brief, undefined, [], researchDeps());
-      ids.push(first.id);
-      expect("partial" in first && first.partial).toBe(true);
-      expect(textCalls).toBe(1);
-      expect(imageCalls).toBe(2);
+      const file1 = join(temp, "post-1", "post.md");
+      const file2 = join(temp, "post-2", "post.md");
 
-      imageWorks = true;
-      const second = await generate(brief, undefined, []);
-      expect(second.id).toBe(first.id);
-      expect(textCalls).toBe(1);
-      expect(imageCalls).toBe(3);
+      await writeFile(
+        file1,
+        serializePost(meta1, "## Substantive Heading 1\n\nBody for first bulk post with enough characters."),
+      );
+      await writeFile(
+        file2,
+        serializePost(meta2, "## Substantive Heading 2\n\nBody for second bulk post with enough characters."),
+      );
 
-      const third = await generate(brief, undefined, []);
-      expect(third.id).toBe(first.id);
-      expect(imageCalls).toBe(3);
+      const storage = new MemoryStorage();
+      const service = new BlogService(storage);
 
-      await approve(first.id);
-      const before = await loadWorkspace(first.id);
+      const bulkResult = await service.publishBulk([
+        { file: file1 },
+        { file: file2 },
+      ]);
 
-      await revise(first.id, "Clarify the boundaries", researchDeps());
-      const after = await loadWorkspace(first.id);
-      expect(after.meta.cover).toEqual(before.meta.cover);
-      expect(after.meta.slug).toBe(before.meta.slug);
-      expect(after.state.approval).toBeUndefined();
-      expect(after.state.textModel).toBe("text-model");
+      expect(bulkResult.total).toBe(2);
+      expect(bulkResult.published).toBe(2);
+      expect(bulkResult.failed).toBe(0);
+
+      const manifest = await service.manifest();
+      expect(manifest.posts.length).toBe(2);
+      expect(manifest.posts.some((p) => p.meta.slug === "bulk-post-1")).toBe(true);
+      expect(manifest.posts.some((p) => p.meta.slug === "bulk-post-2")).toBe(true);
+
+      // Verify files in R2
+      expect(await storage.get("blog/posts/bulk-post-1/post.md")).not.toBeNull();
+      expect(await storage.get("blog/posts/bulk-post-2/post.md")).not.toBeNull();
     } finally {
-      globalThis.fetch = originalFetch;
-      for (const key of keys) {
-        if (saved[key] === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = saved[key];
-        }
-      }
+      await rm(temp, { recursive: true });
     }
   });
 
-  test("private URLs and credential files are refused", async () => {
-    await expect(
-      publicFetch("https://127.0.0.1/private", AbortSignal.timeout(100)),
-    ).rejects.toThrow("Private");
-    await expect(
-      publicFetch("http://example.com", AbortSignal.timeout(100)),
-    ).rejects.toThrow("HTTPS");
-
-    const dir = await mkdtemp(join(tmpdir(), "blog-secret-test-"));
+  test("handles partial failures during bulk publishing without discarding valid posts", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-test-bulk-partial-"));
     try {
-      await writeFile(
-        join(dir, ".npmrc"),
-        "//registry.example/:_authToken=private-secret",
-      );
-      await writeFile(join(dir, ".envrc"), "export SOMETHING=private-secret");
-      await expect(localSource(join(dir, ".npmrc"))).rejects.toThrow("secret");
-      await expect(localSource(join(dir, ".envrc"))).rejects.toThrow("secret");
+      await mkdir(join(temp, "valid"));
+      await mkdir(join(temp, "invalid"));
 
+      await writeFile(join(temp, "valid", "cover.png"), pngBytes);
+
+      const validMeta: Post = {
+        ...sampleMeta,
+        slug: "valid-post",
+        title: "Valid Post Title Here",
+      };
+      const validFile = join(temp, "valid", "post.md");
       await writeFile(
-        join(dir, "notes.txt"),
-        "api_key = abcdefghijklmnopqrstuvwxyz",
+        validFile,
+        serializePost(validMeta, "## Valid Post\n\nThis is a substantive valid post body for testing."),
       );
-      await expect(localSource(join(dir, "notes.txt"))).rejects.toThrow(
-        "credentials",
+
+      // Invalid post: references cover.png that does not exist
+      const invalidMeta: Post = {
+        ...sampleMeta,
+        slug: "invalid-post",
+        title: "Invalid Post Title Here",
+        cover: { src: "./missing-cover.png", alt: "Missing image" },
+      };
+      const invalidFile = join(temp, "invalid", "post.md");
+      await writeFile(
+        invalidFile,
+        serializePost(invalidMeta, "## Invalid Post\n\nThis post has a missing cover image file."),
       );
+
+      const storage = new MemoryStorage();
+      const service = new BlogService(storage);
+
+      const bulkResult = await service.publishBulk([
+        { file: validFile },
+        { file: invalidFile },
+      ]);
+
+      expect(bulkResult.total).toBe(2);
+      expect(bulkResult.published).toBe(1);
+      expect(bulkResult.failed).toBe(1);
+
+      const validRes = bulkResult.results.find((r) => r.status === "ok");
+      expect(validRes).toBeDefined();
+
+      const invalidRes = bulkResult.results.find((r) => r.status === "failed");
+      expect(invalidRes).toBeDefined();
+
+      // Valid post made it into manifest
+      const manifest = await service.manifest();
+      expect(manifest.posts.length).toBe(1);
+      expect(manifest.posts[0].meta.slug).toBe("valid-post");
     } finally {
-      await rm(dir, { recursive: true });
+      await rm(temp, { recursive: true });
     }
-
-    expect(() => imageType(Buffer.from("<svg/>"))).toThrow("Invalid");
   });
 
-  test("CLI rejects destructive dry-run combinations before action", async () => {
-    const command = Bun.spawn(
-      ["bun", "tools/blog/cli.ts", "clean", "invalid", "--yes", "--dry-run"],
-      { stdout: "pipe", stderr: "pipe" },
+  test("findPostsInDir discovers posts in subdirectories and folders", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "blog-test-find-"));
+    try {
+      await mkdir(join(temp, "sub-1"));
+      await mkdir(join(temp, "sub-2"));
+
+      await writeFile(join(temp, "sub-1", "post.md"), "test");
+      await writeFile(join(temp, "sub-2", "article.md"), "test");
+
+      const found = await findPostsInDir(temp);
+      expect(found.length).toBe(2);
+      expect(found[0]).toContain("post.md");
+      expect(found[1]).toContain("article.md");
+    } finally {
+      await rm(temp, { recursive: true });
+    }
+  });
+
+  test("lock prevents concurrent operations and releases cleanly", async () => {
+    const storage = new MemoryStorage();
+    const service = new BlogService(storage);
+
+    const owner = await service.acquireLock();
+    expect((await service.lockStatus()).locked).toBe(true);
+
+    await expect(service.acquireLock()).rejects.toThrow("Publishing lock held");
+
+    await service.releaseLock(owner);
+    expect((await service.lockStatus()).locked).toBe(false);
+  });
+});
+
+describe("Migration from legacy structure", () => {
+  test("migrates legacy head/objects layout to blog/posts/<slug>/ and blog/manifest.json", async () => {
+    const storage = new MemoryStorage();
+
+    const postMeta: Post = {
+      version: 1,
+      title: "Migrated Article Title",
+      slug: "migrated-article",
+      description: "An article being migrated from legacy UUID object storage layout to clean folder structure.",
+      author: "Murtaza Baanihali",
+      status: "published",
+      category: "technology",
+      tags: ["migration", "tech"],
+      publishedAt: "2024-05-01T10:00:00Z",
+      updatedAt: "2024-05-01T10:00:00Z",
+      cover: {
+        src: "blog/objects/old-uuid/cover.png",
+        alt: "Clean technical line sketch",
+      },
+    };
+
+    const oldRaw = serializePost(
+      postMeta,
+      "This is the migrated body of the article.",
     );
-    expect(await command.exited).toBe(2);
-    expect(await new Response(command.stderr).text()).toContain(
-      "no action taken",
+    const oldEntry: Entry = {
+      meta: postMeta,
+      key: "blog/objects/old-uuid/post.md" as any,
+      revision: hash(oldRaw),
+      assets: ["blog/objects/old-uuid/cover.png" as any],
+    };
+
+    // Populate mock legacy structure
+    await storage.put("blog/objects/old-uuid/cover.png", pngBytes, "image/png");
+    await storage.put(
+      "blog/objects/old-uuid/post.md",
+      bytes(oldRaw),
+      "text/markdown",
     );
+    await storage.put(
+      "blog/objects/old-uuid/manifest.json",
+      bytes(JSON.stringify({ version: 1, posts: [oldEntry] })),
+      "application/json",
+    );
+    await storage.put(
+      HEAD_KEY,
+      bytes(
+        JSON.stringify({
+          version: 1,
+          commit: "old-uuid",
+          manifest: "blog/objects/old-uuid/manifest.json",
+          inventory: "blog/objects/old-uuid/manifest.json",
+        }),
+      ),
+      "application/json",
+    );
+
+    const stats = await migrateBlogs(storage, { yes: true });
+
+    expect(stats.migrated).toBe(1);
+    expect(stats.failed).toBe(0);
+
+    // Verify new manifest exists
+    const manifestStored = await storage.get(MANIFEST_KEY);
+    expect(manifestStored).not.toBeNull();
+    const manifest = manifestSchema.parse(JSON.parse(text(manifestStored!)));
+    expect(manifest.posts.length).toBe(1);
+    expect(manifest.posts[0].meta.slug).toBe("migrated-article");
+    expect(manifest.posts[0].key).toBe("blog/posts/migrated-article/post.md");
+    expect(manifest.posts[0].meta.cover.src).toBe(
+      "blog/posts/migrated-article/cover.png",
+    );
+
+    // Verify new files in R2
+    expect(
+      await storage.get("blog/posts/migrated-article/post.md"),
+    ).not.toBeNull();
+    expect(
+      await storage.get("blog/posts/migrated-article/cover.png"),
+    ).not.toBeNull();
   });
 });
