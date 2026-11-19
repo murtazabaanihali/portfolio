@@ -1,62 +1,50 @@
 #!/usr/bin/env bun
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import {
   BlogService,
-  batchSchema,
-  rejectDraft,
-  type Action,
-  type Plan,
+  findPostsInDir,
+  type BulkPublishItem,
 } from "./core";
 import { R2Storage, Conflict } from "./storage";
-import {
-  approve,
-  cleanup,
-  importPost,
-  listWorkspaces,
-  loadWorkspace,
-  setStatus,
-} from "./workspace";
-import { generate, generateBatch, generateCover, revise } from "./ai";
-import { runAutonomous, suggestDirections } from "./autonomous";
-import { articleCatalog, searchArticles } from "./catalog";
+import { migrateBlogs } from "./migrate";
 
-const help = `Local blog workflow (never runs in the Worker)
-bun run blog <command> [arguments] [options]
+const help = `Blog Publishing CLI for Agents
+Usage: bun run blog <command> [arguments] [options]
 
-import <post.md> [--cover path]       Copy source + referenced ./images/ files into owned workspace
-import-batch <files.json>            JSON array of {file, cover?}
-workspaces                          Local work/review status
-validate <id>                       Validate one workspace
-status <id> draft|published          Set editorial status; publication dates set explicitly
-approve <id>                        Approve exact content + cover + inline-image revision
-plan <id...> [--batch actions.json]  Read-only diff (optionally --out plan.json)
-publish <id...>                     Plan/commit; --yes is explicit noninteractive authorization
-publish --plan plan.json           Commit only if plan, content, and remote baseline still match
-                                   --dry-run never mutates or calls AI
-unpublish <slug> / delete <slug>    Explicit removal; --dry-run or --yes required
-list / fetch <slug>                 List remote editorial inventory / fetch for editing
-init --yes                         Initialize empty remote manifests (one-time provisioning)
-gc [--yes]                         List garbage; delete only with --yes and grace period
-lock-status                        Inspect a stranded publishing lock
-unlock <owner> --yes --no-active-writers  Manual recovery ONLY after stopping all writers
-clean <id> --yes                    Explicitly discard owned local work
-reject <id...> --yes                Completely remove drafts everywhere (local, DB, remote)
-generate <brief.json> --yes [--allow-existing-topic]  Paid research agent + text + cover; arrays supported
-autonomous <batch.json> --yes       Bounded batch; mode draft or publish (live requires --auto-publish)
-suggest --yes                      Paid LLM topic directions from DB/local coverage and context
-related <query>                    Cached metadata search of DB and local coverage
-cover <id> --yes [--regenerate]     Retry/reuse cover (regenerate only explicitly)
-revise <id> --instructions "..." --yes  Fresh research agent + rewrite; may incur charges
-tui                                Keyboard review, diff, approval, editor, generation
+Commands:
+  publish <post.md...> [--cover <image>]  Publish one or more posts directly to R2
+  publish <directory>                    Bulk publish all posts found in a directory
+  publish --batch <batch.json>           Bulk publish from a JSON array of files
+  publish-batch <batch.json>             Alias for bulk publish from batch JSON
+  list                                   List all published posts
+  unpublish <slug> --yes                 Unpublish a post (removes from manifest)
+  delete <slug> --yes                    Permanently delete a post and its files
+  migrate [--yes] [--dry-run]            Migrate legacy blog/objects/ to blog/posts/<slug>/
+  init --yes                             Initialize empty blog manifest in R2
+  lock-status                            Check active publishing lock
+  unlock [owner] --yes [--force]         Release publishing lock
 
-All results are JSON. Plans contain text/frontmatter diffs, cover hashes and local inline-image hashes.
-Exit codes: 0 success; 1 operation failure/partial generation; 2 invalid input;
-3 concurrent state/revision conflict; 4 missing explicit authorization.
-See tools/blog/README.md and AGENTS.md. No implicit remote deletion.
+Examples:
+  # Publish single post:
+  bun run blog publish ./my-post/post.md --cover ./my-post/cover.png
+  bun run blog publish ./my-post/post.md (uses frontmatter cover.src)
+
+  # Bulk publish multiple files:
+  bun run blog publish ./post1.md ./post2.md ./post3.md
+
+  # Bulk publish an entire folder of articles:
+  bun run blog publish ./articles/
+
+  # Bulk publish via batch JSON:
+  bun run blog publish --batch ./batch.json
+  # batch.json format: ["./p1/post.md", "./p2/post.md"]
+  # or: [{ "file": "./p1/post.md", "cover": "./p1/cover.png" }]
+
+All commands return clean JSON. Errors are written to stderr.
+Exit codes: 0 success; 1 failure; 2 invalid input; 3 state conflict; 4 missing authorization.
 `;
 
-/** CLI entrypoint for local blog management, drafting, and publishing commands. */
 async function main() {
   const args = parseArgs({
     args: process.argv.slice(2),
@@ -67,13 +55,7 @@ async function main() {
       "dry-run": { type: "boolean" },
       cover: { type: "string" },
       batch: { type: "string" },
-      plan: { type: "string" },
-      out: { type: "string" },
-      "allow-existing-topic": { type: "boolean" },
-      "auto-publish": { type: "boolean" },
-      instructions: { type: "string" },
-      "no-active-writers": { type: "boolean" },
-      regenerate: { type: "boolean" },
+      force: { type: "boolean" },
       help: { type: "boolean" },
     },
   });
@@ -86,284 +68,122 @@ async function main() {
     return;
   }
 
-  if (
-    options["dry-run"] &&
-    !["plan", "publish", "unpublish", "delete", "gc"].includes(command)
-  ) {
-    process.exitCode = 2;
-    throw new Error(
-      "--dry-run is supported only for plan/publish/unpublish/delete/gc; no action taken",
-    );
-  }
-
   const requireYes = () => {
     if (!options.yes) {
       process.exitCode = 4;
-      throw new Error("Explicit --yes required; review first");
+      throw new Error("Explicit --yes required for this operation");
     }
   };
 
-  const required = (index = 0) => {
+  const required = (index = 0, name = "argument") => {
     if (!ids[index]) {
       process.exitCode = 2;
-      throw new Error("Missing command argument");
+      throw new Error(`Missing ${name}`);
     }
     return ids[index];
   };
 
+  const storage = new R2Storage();
+  const service = new BlogService(storage);
   let result: unknown;
-  const service = () => new BlogService(new R2Storage());
 
   switch (command) {
-    case "import": {
-      result = { id: await importPost(required(), options.cover) };
-      break;
-    }
+    case "publish-batch":
+    case "publish": {
+      let items: BulkPublishItem[] = [];
 
-    case "import-batch": {
-      const files: { file: string; cover?: string }[] = JSON.parse(
-        await readFile(required(), "utf8"),
-      );
-      if (!Array.isArray(files) || files.length > 100) {
-        throw new Error("Expected at most 100 file inputs");
-      }
-      result = await Promise.all(
-        files.map(async (file) => {
-          try {
-            return {
-              file: file.file,
-              id: await importPost(file.file, file.cover),
-            };
-          } catch (e) {
-            process.exitCode = 1;
-            return { file: file.file, error: String(e) };
+      if (options.batch || command === "publish-batch") {
+        const batchFile = options.batch || required(0, "batch json file");
+        const parsed = JSON.parse(await readFile(batchFile, "utf8"));
+        if (!Array.isArray(parsed)) {
+          throw new Error("Batch file must contain a JSON array");
+        }
+        items = parsed.map((item: any) =>
+          typeof item === "string"
+            ? { file: item }
+            : { file: item.file, cover: item.cover },
+        );
+      } else if (ids.length > 1) {
+        items = ids.map((file) => ({ file }));
+      } else if (ids.length === 1) {
+        const target = ids[0];
+        const targetStat = await stat(target).catch(() => null);
+        if (targetStat?.isDirectory()) {
+          const files = await findPostsInDir(target);
+          if (!files.length) {
+            throw new Error(
+              `No blog post markdown files found in directory: ${target}`,
+            );
           }
-        }),
-      );
-      break;
-    }
-
-    case "workspaces": {
-      result = await listWorkspaces();
-      break;
-    }
-
-    case "validate": {
-      const w = await loadWorkspace(required());
-      result = {
-        id: w.id,
-        meta: w.meta,
-        fingerprint: w.fingerprint,
-        approved: w.fingerprint === w.state.approval,
-      };
-      break;
-    }
-
-    case "status": {
-      const status = required(1);
-      if (status !== "draft" && status !== "published") {
-        throw new Error("Status must be draft or published");
+          items = files.map((file) => ({ file }));
+        } else {
+          // Single file publish with optional --cover
+          result = await service.publish(target, { coverPath: options.cover });
+          break;
+        }
+      } else {
+        throw new Error(
+          "Missing post file, directory, or --batch to publish",
+        );
       }
-      await setStatus(required(), status);
-      result = { id: ids[0], status };
-      break;
-    }
 
-    case "approve": {
-      result = await approve(required());
-      break;
-    }
-
-    case "clean": {
-      requireYes();
-      await cleanup(required());
-      result = { cleaned: ids[0] };
-      break;
-    }
-
-    case "reject": {
-      requireYes();
-      const toReject = ids.length ? ids : [required()];
-      let svc: BlogService | undefined;
-      try {
-        svc = service();
-      } catch {}
-      result = await Promise.all(toReject.map((id) => rejectDraft(id, svc)));
+      const bulkResult = await service.publishBulk(items);
+      result = bulkResult;
+      if (bulkResult.failed > 0) {
+        process.exitCode = 1;
+      }
       break;
     }
 
     case "list": {
-      result = (await service().snapshot()).inventory.posts.map((e) => ({
-        ...e.meta,
-        revision: e.revision,
-      }));
+      result = await service.list();
       break;
     }
 
-    case "fetch": {
-      result = { id: await service().fetch(required()) };
+    case "unpublish": {
+      requireYes();
+      const slug = required(0, "post slug");
+      result = await service.unpublish(slug);
+      break;
+    }
+
+    case "delete": {
+      requireYes();
+      const slug = required(0, "post slug");
+      result = await service.deletePost(slug);
+      break;
+    }
+
+    case "migrate": {
+      result = await migrateBlogs(storage, {
+        yes: options.yes,
+        dryRun: options["dry-run"],
+      });
       break;
     }
 
     case "init": {
       requireYes();
-      result = await service().initialize();
+      result = await service.initialize();
       break;
     }
 
     case "lock-status": {
-      result = await service().lockStatus();
+      result = await service.lockStatus();
       break;
     }
 
     case "unlock": {
       requireYes();
-      if (!options["no-active-writers"]) {
-        throw new Error(
-          "Stop ALL writers, verify lock owner, then pass --no-active-writers",
-        );
-      }
-      result = await service().recoverLock(required());
+      const owner = ids[0];
+      await service.releaseLock(owner, Boolean(options.force));
+      result = { success: true, unlocked: true };
       break;
-    }
-
-    case "gc": {
-      result = await service().gc(!options.yes || Boolean(options["dry-run"]));
-      break;
-    }
-
-    case "plan":
-    case "publish":
-    case "unpublish":
-    case "delete": {
-      const svc = service();
-      const actions: Action[] = options.batch
-        ? batchSchema.parse(JSON.parse(await readFile(options.batch, "utf8")))
-            .actions
-        : command === "unpublish" || command === "delete"
-          ? [{ type: command, slug: required() }]
-          : ids.map((workspace) => ({ type: "upsert", workspace }));
-
-      const saved: Plan | undefined = options.plan
-        ? JSON.parse(await readFile(options.plan, "utf8"))
-        : undefined;
-
-      const fresh = await svc.plan(
-        saved ? saved.changes.map((c) => c.action) : actions,
-      );
-      if (saved && saved.token !== fresh.token) {
-        throw new Conflict(
-          "Saved plan is stale; inspect a new plan before proceeding",
-        );
-      }
-
-      // Commit the SAVED plan so its token binds the exact reviewed revision.
-      const plan: Plan = saved ?? fresh;
-      if (options.out) {
-        await writeFile(options.out, JSON.stringify(plan, null, 2));
-      }
-
-      if (command === "plan" || options["dry-run"]) {
-        result = { ...plan, dryRun: true };
-      } else {
-        // Explicit removal requires --yes; upserts can use revision-bound local approvals.
-        if (
-          plan.changes.some(
-            (c) => c.kind === "delete" || c.kind === "unpublish",
-          )
-        ) {
-          requireYes();
-        }
-        result = await svc.commit(plan, Boolean(options.yes));
-      }
-      break;
-    }
-
-    case "suggest": {
-      requireYes();
-      result = { directions: await suggestDirections() };
-      break;
-    }
-
-    case "related": {
-      result = searchArticles(await articleCatalog().all(), {
-        topic: required(),
-      });
-      break;
-    }
-
-    case "autonomous": {
-      requireYes();
-      const input = JSON.parse(await readFile(required(), "utf8"));
-      if (options["allow-existing-topic"]) {
-        input.allowExistingTopic = true;
-      }
-      if (input.mode === "publish" && !options["auto-publish"]) {
-        throw new Error(
-          "Live autonomy requires --auto-publish as well as --yes",
-        );
-      }
-      result = await runAutonomous(input);
-      if (
-        (result as Awaited<ReturnType<typeof runAutonomous>>).results.some(
-          (r) => ["failed", "held-draft"].includes(r.status),
-        )
-      ) {
-        process.exitCode = 1;
-      }
-      break;
-    }
-
-    case "generate": {
-      requireYes();
-      if (options["dry-run"]) {
-        throw new Error("Generation is separate from publishing dry-run");
-      }
-      const input = JSON.parse(await readFile(required(), "utf8"));
-      const withOverride = (brief: unknown) =>
-        options["allow-existing-topic"]
-          ? { ...(brief as object), allowExistingTopic: true }
-          : brief;
-
-      result = Array.isArray(input)
-        ? await generateBatch(input.map(withOverride))
-        : await generate(withOverride(input));
-
-      if (JSON.stringify(result).includes('"error":')) {
-        process.exitCode = 1;
-      }
-      break;
-    }
-
-    case "cover": {
-      requireYes();
-      result = await generateCover(required(), Boolean(options.regenerate));
-      break;
-    }
-
-    case "revise": {
-      requireYes();
-      if (!options.instructions) {
-        throw new Error("Supply --instructions");
-      }
-      result = await revise(required(), options.instructions);
-      break;
-    }
-
-    case "tui": {
-      if (!process.stdin.isTTY) {
-        throw new Error(
-          "TUI requires a terminal; use noninteractive commands instead",
-        );
-      }
-      const { launchTui } = await import("./tui");
-      await launchTui();
-      return;
     }
 
     default: {
       process.exitCode = 2;
-      throw new Error("Unknown command. Use --help");
+      throw new Error(`Unknown command "${command}". Use --help for usage.`);
     }
   }
 

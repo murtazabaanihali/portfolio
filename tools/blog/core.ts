@@ -1,832 +1,645 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { createTwoFilesPatch } from "diff";
-import { z } from "zod";
+import { readFile, readdir, stat } from "node:fs/promises";
+import { dirname, resolve, extname, join } from "node:path";
 import {
+  MANIFEST_KEY,
   HEAD_KEY,
-  OBJECT_PREFIX,
-  GRACE_MS,
+  LOCK_KEY,
+  siteUrl,
   cdnUrl,
 } from "../../lib/blog/config";
 import {
   headSchema,
-  inventorySchema,
   manifestSchema,
   parsePost,
   serializePost,
   rewriteImageUrls,
-  slugSchema,
-  objectKey,
   type Entry,
-  type Head,
-  type Inventory,
   type Manifest,
+  type Post,
 } from "../../lib/blog/contract";
 import { bytes, text, Conflict, R2Storage, type Storage } from "./storage";
-import {
-  loadWorkspace,
-  cleanup,
-  createWorkspace,
-  hash,
-  workspacePath,
-} from "./workspace";
+import { hash, imageType, readInlineImages, type InlineImage } from "./images";
 
-const LOCK_KEY = "blog/publishing.lock";
-
-/** Schema for individual publishing batch actions. */
-export const actionSchema = z.discriminatedUnion("type", [
-  z
-    .object({ type: z.literal("upsert"), workspace: z.string().uuid() })
-    .strict(),
-  z
-    .object({ type: z.enum(["unpublish", "delete"]), slug: slugSchema })
-    .strict(),
-]);
-
-/** Schema for a publishing batch request (1 to 100 actions). */
-export const batchSchema = z
-  .object({
-    version: z.literal(1),
-    actions: z.array(actionSchema).min(1).max(100),
-  })
-  .strict();
-
-export type Action = z.infer<typeof actionSchema>;
-
-/** Individual planned modification to a post. */
-export type Change = {
-  action: Action;
+export type PublishResult = {
+  success: true;
   slug: string;
-  kind: "new" | "update" | "unpublish" | "delete";
-  fingerprint?: string;
-  diff: string;
-  cover: { before?: string; after?: string };
-  images?: { src: string; sha256: string; bytes: number }[];
+  title: string;
+  url: string;
+  contentKey: string;
+  cover: string;
+  assets: string[];
 };
 
-/** Published batch plan with verification token and baseline ETag. */
-export type Plan = {
-  version: 1;
-  baseline: string | null;
-  changes: Change[];
-  token: string;
+export type BulkPublishItem = {
+  file: string;
+  cover?: string;
 };
 
-type Snapshot = {
-  head: Head | null;
-  etag: string | null;
-  inventory: Inventory;
-  manifest: Manifest;
+export type BulkPublishResult = {
+  total: number;
+  published: number;
+  failed: number;
+  results: Array<
+    | {
+        file: string;
+        slug: string;
+        title: string;
+        url: string;
+        contentKey: string;
+        cover: string;
+        status: "ok";
+      }
+    | {
+        file: string;
+        status: "failed";
+        error: string;
+      }
+  >;
 };
 
-/** Gather all storage keys actively referenced by a head and its inventory. */
-function references(head: Head | null, inventory: Inventory): Set<string> {
-  const refs = new Set<string>(head ? [head.inventory, head.manifest] : []);
-  for (const entry of inventory.posts) {
-    refs.add(entry.key);
-    for (const asset of entry.assets) {
-      refs.add(asset);
-    }
+/** Scan a directory for post.md files or article subdirectories. */
+export async function findPostsInDir(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const posts: string[] = [];
+
+  // 1. Direct post.md
+  if (entries.some((e) => e.isFile() && e.name === "post.md")) {
+    return [join(dir, "post.md")];
   }
-  return refs;
-}
 
-/**
- * Extract all managed CDN asset storage keys from cover source and post Markdown.
- * Scans Markdown content so reference-style images keep managed assets alive during GC.
- */
-function assetKeys(raw: string, cover: string): string[] {
-  const found = new Set<string>();
-  if (objectKey.safeParse(cover).success) {
-    found.add(cover);
-  }
-
-  const base = cdnUrl("");
-  for (const match of raw.matchAll(/https:\/\/[^\s<>"')]+/g)) {
-    if (match[0].startsWith(base)) {
-      const key = decodeURIComponent(new URL(match[0]).pathname.slice(1));
-      if (objectKey.safeParse(key).success) {
-        found.add(key);
+  // 2. Subdirectories with post.md or *.md
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      const sub = join(dir, e.name);
+      const subEntries: string[] = await readdir(sub).catch(() => []);
+      if (subEntries.includes("post.md")) {
+        posts.push(join(sub, "post.md"));
+      } else {
+        const md = subEntries.find(
+          (f) => f.endsWith(".md") && !/^readme|agents|context/i.test(f),
+        );
+        if (md) posts.push(join(sub, md));
       }
     }
   }
-  return [...found].sort();
+
+  // 3. Fallback: *.md files in dir
+  if (posts.length === 0) {
+    for (const e of entries) {
+      if (
+        e.isFile() &&
+        e.name.endsWith(".md") &&
+        !/^readme|agents|context/i.test(e.name)
+      ) {
+        posts.push(join(dir, e.name));
+      }
+    }
+  }
+
+  return posts.sort();
 }
 
-/**
- * Service managing blog storage snapshots, publishing plans, atomic commits,
- * editorial state locks, and garbage collection.
- */
-export class BlogService {
-  private lockWarnings: string[] = [];
+/** Sync blog post metadata to Neon PostgreSQL database mirror if DATABASE_URL is set. */
+export async function syncPostToDb(entry: Entry): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const { default: db } = await import("../../lib/db");
+    const { blogPosts } = await import("../../lib/db/blog-schema");
 
+    await db
+      .insert(blogPosts)
+      .values({
+        slug: entry.meta.slug,
+        title: entry.meta.title,
+        description: entry.meta.description,
+        author: entry.meta.author,
+        status: entry.meta.status,
+        category: entry.meta.category as any,
+        tags: entry.meta.tags,
+        publishedAt: entry.meta.publishedAt
+          ? new Date(entry.meta.publishedAt)
+          : null,
+        updatedAt: entry.meta.updatedAt ? new Date(entry.meta.updatedAt) : null,
+        coverSrc: entry.meta.cover.src,
+        coverAlt: entry.meta.cover.alt,
+        contentKey: entry.key,
+        revision: entry.revision,
+      })
+      .onConflictDoUpdate({
+        target: blogPosts.slug,
+        set: {
+          title: entry.meta.title,
+          description: entry.meta.description,
+          author: entry.meta.author,
+          status: entry.meta.status,
+          category: entry.meta.category as any,
+          tags: entry.meta.tags,
+          publishedAt: entry.meta.publishedAt
+            ? new Date(entry.meta.publishedAt)
+            : null,
+          updatedAt: entry.meta.updatedAt
+            ? new Date(entry.meta.updatedAt)
+            : null,
+          coverSrc: entry.meta.cover.src,
+          coverAlt: entry.meta.cover.alt,
+          contentKey: entry.key,
+          revision: entry.revision,
+        },
+      });
+  } catch (e) {
+    console.warn(
+      "DB mirror sync warning (content published to R2 successfully):",
+      e instanceof Error ? e.message : String(e),
+    );
+  }
+}
+
+/** Update blog post status in DB mirror. */
+export async function setDbPostStatus(
+  slug: string,
+  status: "draft" | "published",
+): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const { default: db } = await import("../../lib/db");
+    const { blogPosts } = await import("../../lib/db/blog-schema");
+    const { eq } = await import("drizzle-orm");
+
+    await db
+      .update(blogPosts)
+      .set({ status })
+      .where(eq(blogPosts.slug, slug));
+  } catch (e) {
+    console.warn("DB mirror status update warning:", e instanceof Error ? e.message : String(e));
+  }
+}
+
+/** Delete blog post row from DB mirror. */
+export async function deleteDbPost(slug: string): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const { default: db } = await import("../../lib/db");
+    const { blogPosts } = await import("../../lib/db/blog-schema");
+    const { eq } = await import("drizzle-orm");
+
+    await db.delete(blogPosts).where(eq(blogPosts.slug, slug));
+  } catch (e) {
+    console.warn("DB mirror delete warning:", e instanceof Error ? e.message : String(e));
+  }
+}
+
+/** Service managing clean blog publishing, asset storage, and manifest updates. */
+export class BlogService {
   constructor(readonly storage: Storage) {}
 
   /**
-   * Fetch the current remote head, inventory, and manifest.
-   * Throws if head is missing unless `allowMissing` is true.
+   * Fetch current published manifest.
+   * If blog/manifest.json is absent, falls back to legacy blog/head.json if present.
    */
-  async snapshot(allowMissing = false): Promise<Snapshot> {
-    const stored = await this.storage.get(HEAD_KEY);
-    if (!stored && !allowMissing) {
-      throw new Error(
-        "Active head missing. Initialize a new bucket explicitly; investigate missing state on an existing bucket.",
-      );
-    }
-    if (!stored) {
-      return {
-        head: null,
-        etag: null,
-        inventory: { version: 1, posts: [], retired: [] },
-        manifest: { version: 1, posts: [] },
-      };
+  async manifest(allowMissing = false): Promise<Manifest> {
+    const direct = await this.storage.get(MANIFEST_KEY);
+    if (direct) {
+      return manifestSchema.parse(JSON.parse(text(direct)));
     }
 
-    const head = headSchema.parse(JSON.parse(text(stored)));
-    const [invStored, manStored] = await Promise.all([
-      this.storage.get(head.inventory),
-      this.storage.get(head.manifest),
-    ]);
-
-    if (!invStored || !manStored) {
-      throw new Error(
-        "Remote head references missing objects; refusing to overwrite",
-      );
+    // Backward compatibility fallback to legacy head.json during migration
+    const legacyHead = await this.storage.get(HEAD_KEY);
+    if (legacyHead) {
+      const head = headSchema.parse(JSON.parse(text(legacyHead)));
+      const legacyManifest = await this.storage.get(head.manifest);
+      if (legacyManifest) {
+        return manifestSchema.parse(JSON.parse(text(legacyManifest)));
+      }
     }
 
-    const inventory = inventorySchema.parse(JSON.parse(text(invStored)));
-    const manifest = manifestSchema.parse(JSON.parse(text(manStored)));
+    if (allowMissing) {
+      return { version: 1, posts: [] };
+    }
 
-    const expected = inventory.posts.filter(
-      (p) => p.meta.status === "published",
+    throw new Error(
+      "Blog has not been initialized. Run 'bun run blog init --yes' first.",
     );
-    if (
-      JSON.stringify(expected) !== JSON.stringify(manifest.posts) ||
-      new Set(inventory.posts.map((p) => p.meta.slug)).size !==
-        inventory.posts.length
-    ) {
-      throw new Error("Remote inventory/manifest inconsistency");
-    }
-
-    return { head, etag: stored.etag, inventory, manifest };
   }
 
-  /**
-   * Compute a read-only publication plan and unified diffs against remote baseline.
-   * Validates date rules, covers, and collision constraints.
-   */
-  async plan(input: Action[]): Promise<Plan> {
-    const actions = batchSchema.parse({ version: 1, actions: input }).actions;
-    const snapshot = await this.snapshot();
-    const changes: Change[] = [];
-    const slugs = new Set<string>();
-
-    for (const action of actions) {
-      const w =
-        action.type === "upsert"
-          ? await loadWorkspace(action.workspace)
-          : undefined;
-      const slug = w ? w.meta.slug : (action as { slug: string }).slug;
-
-      if (slugs.has(slug)) {
-        throw new Error("A batch cannot target the same slug twice");
-      }
-      slugs.add(slug);
-
-      const before = snapshot.inventory.posts.find((p) => p.meta.slug === slug);
-      if (!w && !before) {
-        throw new Error(`No remote post: ${slug}`);
-      }
-
-      if (w && before) {
-        if (
-          w.state.baselineRevision &&
-          w.state.baselineRevision !== before.revision
-        ) {
-          throw new Conflict(`${slug} changed remotely since it was fetched`);
-        }
-        if (
-          before.meta.publishedAt &&
-          w.meta.publishedAt !== before.meta.publishedAt
-        ) {
-          throw new Error("Original publishedAt must remain unchanged");
-        }
-      }
-
-      if (w && w.meta.cover.src.includes("example.invalid")) {
-        throw new Error(
-          "Generate or import a real cover before uploading this draft/post",
-        );
-      }
-
-      if (w?.meta.status === "published") {
-        if (
-          Date.parse(w.meta.publishedAt!) > Date.now() ||
-          Date.parse(w.meta.updatedAt!) > Date.now()
-        ) {
-          throw new Error("Future publication is not supported; use draft");
-        }
-        if (
-          before &&
-          w.meta.updatedAt &&
-          before.meta.updatedAt &&
-          Date.parse(w.meta.updatedAt) < Date.parse(before.meta.updatedAt)
-        ) {
-          throw new Error("updatedAt cannot move backwards");
-        }
-      }
-
-      let previous = "";
-      if (before) {
-        const object = await this.storage.get(before.key);
-        if (!object) {
-          throw new Error("Remote article missing");
-        }
-        previous = text(object);
-      }
-
-      const after =
-        w?.raw ||
-        (action.type === "unpublish"
-          ? serializePost(
-              { ...before!.meta, status: "draft" },
-              parsePost(previous).body,
-            )
-          : "");
-
-      if (
-        w &&
-        before?.meta.status === "published" &&
-        w.meta.status === "published" &&
-        previous !== w.raw &&
-        w.meta.updatedAt === before.meta.updatedAt
-      ) {
-        throw new Error(
-          "Published corrections require a new updatedAt (publishedAt stays unchanged)",
-        );
-      }
-
-      const kind: Change["kind"] =
-        action.type === "delete"
-          ? "delete"
-          : action.type === "unpublish" ||
-              (before?.meta.status === "published" &&
-                w?.meta.status === "draft")
-            ? "unpublish"
-            : before
-              ? "update"
-              : "new";
-
-      const coverAfter = w
-        ? w.meta.cover.src + (w.cover ? " (sha256 " + hash(w.cover) + ")" : "")
-        : action.type === "delete"
-          ? undefined
-          : before?.meta.cover.src;
-
-      changes.push({
-        action,
-        slug,
-        kind,
-        fingerprint: w?.fingerprint,
-        ...(w && Object.keys(w.images).length ? {
-          images: Object.entries(w.images).map(([src, data]) => ({ src, sha256: hash(data), bytes: data.length })),
-        } : {}),
-        diff: createTwoFilesPatch(
-          slug + "/before.md",
-          slug + "/after.md",
-          previous,
-          after,
-        ),
-        cover: {
-          before: before?.meta.cover.src,
-          after: coverAfter,
-        },
-      });
-    }
-
-    const content = { version: 1 as const, baseline: snapshot.etag, changes };
-    return { ...content, token: hash(JSON.stringify(content)) };
-  }
-
-  /**
-   * Acquire exclusive publishing lock in storage, execute callback,
-   * and ensure the lock is held throughout the operation.
-   */
-  private async locked<T>(
-    fn: (assertHeld: () => Promise<void>) => Promise<T>,
-  ): Promise<T> {
-    const owner = randomUUID();
-    await this.storage.put(
-      LOCK_KEY,
-      bytes(JSON.stringify({ owner, startedAt: new Date().toISOString() })),
-      "application/json",
-      { absent: true },
-    );
-
-    const assertHeld = async () => {
-      const lock = await this.storage.get(LOCK_KEY);
-      if (!lock || JSON.parse(text(lock)).owner !== owner) {
-        throw new Conflict("Publishing lock ownership lost; refusing mutation");
-      }
-    };
-
+  /** Acquire conditional publishing lock in R2. */
+  async acquireLock(owner = randomUUID()): Promise<string> {
     try {
-      return await fn(assertHeld);
-    } finally {
-      try {
-        await assertHeld();
-        await this.storage.remove(LOCK_KEY);
-      } catch (error) {
-        const warning =
-          "Lock release failed; inspect lock-status before another mutation: " +
-          String(error);
-        this.lockWarnings.push(warning);
-        console.error(JSON.stringify({ warning }));
-      }
-    }
-  }
-
-  /** Inspect the current publishing lock in storage. */
-  async lockStatus(): Promise<{ owner: string; startedAt: string } | null> {
-    const lock = await this.storage.get(LOCK_KEY);
-    return lock
-      ? (JSON.parse(text(lock)) as { owner: string; startedAt: string })
-      : null;
-  }
-
-  /** Manually unlock a stranded publishing lock after stopping all active writers. */
-  async recoverLock(owner: string): Promise<{ unlocked: string }> {
-    const lock = await this.lockStatus();
-    if (!lock || lock.owner !== owner) {
-      throw new Conflict("Lock owner differs; inspect lock-status again");
-    }
-    // Operator must stop ALL writers/recovery commands first. Never auto-expire a lock.
-    await this.storage.remove(LOCK_KEY);
-    return { unlocked: owner };
-  }
-
-  /** Write an object to storage and verify its SHA-256 hash immediately. */
-  private async verifiedPut(
-    key: string,
-    data: Uint8Array,
-    type: string,
-  ): Promise<void> {
-    await this.storage.put(key, data, type, { absent: true });
-    const check = await this.storage.get(key);
-    if (!check || hash(check.bytes) !== hash(data)) {
-      throw new Error(`Upload verification failed: ${key}`);
-    }
-  }
-
-  /**
-   * Commit a planned batch of actions under exclusive storage lock.
-   * Performs CAS update of HEAD_KEY and mirrors changes to PostgreSQL if configured.
-   */
-  async commit(plan: Plan, authorize = false) {
-    if (!authorize && plan.changes.some((c) => c.action.type !== "upsert")) {
-      throw new Error(
-        "Explicit authorization required for remote unpublish/delete actions",
-      );
-    }
-
-    // Re-plan before lock and again inside it. Never trust caller-supplied diffs/fingerprints.
-    const current = await this.plan(plan.changes.map((c) => c.action));
-    if (current.token !== plan.token) {
-      throw new Conflict("Plan or local content changed; inspect a fresh diff");
-    }
-
-    const committed = await this.locked(async (assertHeld) => {
-      const again = await this.plan(plan.changes.map((c) => c.action));
-      if (again.token !== plan.token) {
-        throw new Conflict(
-          "Remote or local state changed while acquiring lock",
-        );
-      }
-
-      const baseline = await this.snapshot();
-      const commit = randomUUID();
-      const prefix = OBJECT_PREFIX + commit + "/";
-      const posts = [...baseline.inventory.posts];
-      const owned: { id: string; fingerprint: string }[] = [];
-      const mutations: {
-        type: "upsert" | "unpublish" | "delete";
-        slug: string;
-        entry?: Entry;
-      }[] = [];
-
-      for (const change of plan.changes) {
-        const previous = posts.find((e) => e.meta.slug === change.slug);
-        let next: Entry | undefined;
-
-        if (change.action.type === "upsert") {
-          const w = await loadWorkspace(change.action.workspace);
-          if (w.fingerprint !== change.fingerprint) {
-            throw new Conflict("Local content changed during publication");
-          }
-          if (!authorize && w.state.approval !== w.fingerprint) {
-            throw new Error(`Approval required for exact revision: ${w.id}`);
-          }
-
-          const meta = { ...w.meta, cover: { ...w.meta.cover } };
-          if (w.cover) {
-            const { imageType } = await import("./workspace");
-            const type = imageType(w.cover);
-            const ext = type === "image/jpeg" ? "jpg" : type.split("/")[1];
-            meta.cover.src = prefix + change.slug + "-cover." + ext;
-            await this.verifiedPut(meta.cover.src, w.cover, type);
-          }
-
-          const imageUrls = new Map<string, string>();
-          for (const [src, data] of Object.entries(w.images)) {
-            const { imageType } = await import("./workspace");
-            const type = imageType(data);
-            const ext = type === "image/jpeg" ? "jpg" : type.split("/")[1];
-            const asset = prefix + change.slug + "-image-" + hash(data) + "." + ext;
-            if (![...imageUrls.values()].includes(cdnUrl(asset))) {
-              await this.verifiedPut(asset, data, type);
-            }
-            imageUrls.set(src, cdnUrl(asset));
-          }
-          const raw = serializePost(meta, rewriteImageUrls(w.body, imageUrls));
-          const key = prefix + change.slug + ".md";
-          parsePost(raw);
-
-          const assets = assetKeys(raw, meta.cover.src);
-          for (const asset of assets) {
-            if (!(await this.storage.get(asset))) {
-              throw new Error(`Referenced asset missing: ${asset}`);
-            }
-          }
-
-          await this.verifiedPut(
-            key,
-            bytes(raw),
-            "text/markdown; charset=utf-8",
-          );
-          next = { meta, key, revision: hash(raw), assets };
-          owned.push({ id: w.id, fingerprint: w.fingerprint });
-          mutations.push({ type: "upsert", slug: change.slug, entry: next });
-        } else if (change.action.type === "unpublish") {
-          const prior = await this.storage.get(previous!.key);
-          if (!prior) {
-            throw new Error("Article disappeared");
-          }
-          const meta = { ...previous!.meta, status: "draft" as const };
-          const raw = serializePost(meta, parsePost(text(prior)).body);
-          const key = prefix + change.slug + ".md";
-          await this.verifiedPut(
-            key,
-            bytes(raw),
-            "text/markdown; charset=utf-8",
-          );
-          next = { ...previous!, meta, key, revision: hash(raw) };
-          mutations.push({
-            type: "unpublish",
-            slug: change.slug,
-            entry: next,
-          });
-        } else if (change.action.type === "delete") {
-          mutations.push({ type: "delete", slug: change.slug });
-        }
-
-        const index = posts.findIndex((e) => e.meta.slug === change.slug);
-        if (index >= 0) {
-          posts.splice(index, 1);
-        }
-        if (next) {
-          posts.push(next);
-        }
-      }
-
-      posts.sort((a, b) => a.meta.slug.localeCompare(b.meta.slug));
-      const head: Head = {
-        version: 1,
-        commit,
-        manifest: prefix + "manifest.json",
-        inventory: prefix + "inventory.json",
-      };
-
-      const now = new Date().toISOString();
-      const currentRefs = references(head, { version: 1, posts, retired: [] });
-      const retired = new Map(
-        baseline.inventory.retired.map((r) => [r.key, r]),
-      );
-
-      for (const key of references(baseline.head, baseline.inventory)) {
-        if (!currentRefs.has(key)) {
-          retired.set(key, { key, at: now });
-        }
-      }
-      for (const key of currentRefs) {
-        retired.delete(key);
-      }
-
-      const inventory = inventorySchema.parse({
-        version: 1,
-        posts,
-        retired: [...retired.values()],
-      });
-      const manifest = manifestSchema.parse({
-        version: 1,
-        posts: posts.filter((p) => p.meta.status === "published"),
-      });
-
-      await this.verifiedPut(
-        head.inventory,
-        bytes(JSON.stringify(inventory)),
-        "application/json",
-      );
-      await this.verifiedPut(
-        head.manifest,
-        bytes(JSON.stringify(manifest)),
-        "application/json",
-      );
-
-      // Catch local edits that occurred during uploads, before any visible commit.
-      for (const w of owned) {
-        if ((await loadWorkspace(w.id)).fingerprint !== w.fingerprint) {
-          throw new Conflict(
-            "Local revision changed during upload; no commit made",
-          );
-        }
-      }
-
-      const payload = bytes(JSON.stringify(head));
-      await assertHeld();
-
-      try {
-        await this.storage.put(
-          HEAD_KEY,
-          payload,
-          "application/json",
-          baseline.etag ? { match: baseline.etag } : { absent: true },
-        );
-      } catch (error) {
-        // A network timeout may occur after a successful commit. Resolve by reading our unique commit ID.
-        const check = await this.storage.get(HEAD_KEY);
-        if (!check || text(check) !== new TextDecoder().decode(payload)) {
-          throw error;
-        }
-      }
-
-      const check = await this.storage.get(HEAD_KEY);
-      if (!check || text(check) !== new TextDecoder().decode(payload)) {
-        throw new Error(
-          "Commit verification uncertain; retain local work and inspect remote state",
-        );
-      }
-
-      return { commit, owned, mutations };
-    });
-
-    const cleanupWarnings: string[] = this.lockWarnings.splice(0);
-
-    // Synchronize to PostgreSQL database mirror if DATABASE_URL is set
-    if (process.env.DATABASE_URL) {
-      try {
-        const [{ default: db }, { blogPosts }, { eq }] = await Promise.all([
-          import("../../lib/db"),
-          import("../../lib/db/blog-schema"),
-          import("drizzle-orm"),
-        ]);
-
-        for (const mut of committed.mutations) {
-          if (mut.entry) {
-            const { meta, key: contentKey, revision } = mut.entry;
-            const values = {
-              slug: meta.slug,
-              title: meta.title,
-              description: meta.description,
-              author: meta.author,
-              status: meta.status,
-              category:
-                meta.category as (typeof blogPosts.$inferInsert)["category"],
-              tags: meta.tags,
-              publishedAt: meta.publishedAt ? new Date(meta.publishedAt) : null,
-              updatedAt: meta.updatedAt ? new Date(meta.updatedAt) : null,
-              coverSrc: meta.cover.src,
-              coverAlt: meta.cover.alt,
-              contentKey,
-              revision,
-            };
-
-            await db
-              .insert(blogPosts)
-              .values(values)
-              .onConflictDoUpdate({
-                target: blogPosts.slug,
-                set: {
-                  title: values.title,
-                  description: values.description,
-                  author: values.author,
-                  status: values.status,
-                  category: values.category,
-                  tags: values.tags,
-                  publishedAt: values.publishedAt,
-                  updatedAt: values.updatedAt,
-                  coverSrc: values.coverSrc,
-                  coverAlt: values.coverAlt,
-                  contentKey: values.contentKey,
-                  revision: values.revision,
-                },
-              });
-          } else if (mut.type === "delete") {
-            await db.delete(blogPosts).where(eq(blogPosts.slug, mut.slug));
-          }
-        }
-
-        try {
-          const { articleCatalog } = await import("./catalog");
-          articleCatalog().invalidate();
-        } catch {}
-      } catch (e) {
-        cleanupWarnings.push(`Database mirror sync warning: ${String(e)}`);
-      }
-    }
-
-    // Clean up local workspaces owned by this batch
-    for (const w of committed.owned) {
-      try {
-        if ((await loadWorkspace(w.id)).fingerprint !== w.fingerprint) {
-          throw new Error("Workspace edited after commit; preserving it");
-        }
-        await cleanup(w.id);
-      } catch (e) {
-        cleanupWarnings.push(`${w.id}: ${String(e)}`);
-      }
-    }
-
-    return { committed: true, commit: committed.commit, cleanupWarnings };
-  }
-
-  /** Fetch a published or draft post from remote storage into a local workspace for editing. */
-  async fetch(slug: string): Promise<string> {
-    const { inventory } = await this.snapshot();
-    const entry = inventory.posts.find(
-      (e) => e.meta.slug === slugSchema.parse(slug),
-    );
-    if (!entry) {
-      throw new Error("Post not found");
-    }
-
-    const stored = await this.storage.get(entry.key);
-    if (!stored) {
-      throw new Error("Article missing");
-    }
-
-    return createWorkspace(text(stored), undefined, ".png", {
-      baselineRevision: entry.revision,
-    });
-  }
-
-  /** One-time explicit initialization of empty remote manifest and inventory in a new bucket. */
-  async initialize() {
-    return this.locked(async (assertHeld) => {
-      const snapshot = await this.snapshot(true);
-      if (snapshot.head) {
-        return { initialized: false, reason: "Already initialized" };
-      }
-
-      const commit = randomUUID();
-      const prefix = OBJECT_PREFIX + commit + "/";
-      const head: Head = {
-        version: 1,
-        commit,
-        manifest: prefix + "manifest.json",
-        inventory: prefix + "inventory.json",
-      };
-
-      await this.verifiedPut(
-        head.manifest,
-        bytes(JSON.stringify(snapshot.manifest)),
-        "application/json",
-      );
-      await this.verifiedPut(
-        head.inventory,
-        bytes(JSON.stringify(snapshot.inventory)),
-        "application/json",
-      );
-      await assertHeld();
       await this.storage.put(
-        HEAD_KEY,
-        bytes(JSON.stringify(head)),
+        LOCK_KEY,
+        bytes(
+          JSON.stringify({
+            owner,
+            acquiredAt: new Date().toISOString(),
+          }),
+        ),
         "application/json",
         { absent: true },
       );
+      return owner;
+    } catch {
+      const existing = await this.lockStatus();
+      throw new Conflict(
+        `Publishing lock held by ${existing.owner || "unknown"} since ${existing.acquiredAt || "unknown"}. If stranded, run 'bun run blog unlock ${existing.owner || ""} --yes'.`,
+      );
+    }
+  }
 
-      return { initialized: true };
-    });
+  /** Release publishing lock. */
+  async releaseLock(owner?: string, force = false): Promise<void> {
+    if (force || !owner) {
+      await this.storage.remove(LOCK_KEY);
+      return;
+    }
+
+    const current = await this.lockStatus();
+    if (!current.locked) return;
+
+    if (current.owner && current.owner !== owner) {
+      console.warn("Lock owner mismatch during release; skipping remove");
+      return;
+    }
+
+    await this.storage.remove(LOCK_KEY);
+  }
+
+  /** Inspect publishing lock status. */
+  async lockStatus(): Promise<{
+    locked: boolean;
+    owner?: string;
+    acquiredAt?: string;
+  }> {
+    const stored = await this.storage.get(LOCK_KEY);
+    if (!stored) return { locked: false };
+    try {
+      const data = JSON.parse(text(stored));
+      return { locked: true, owner: data.owner, acquiredAt: data.acquiredAt };
+    } catch {
+      return { locked: true };
+    }
   }
 
   /**
-   * Identify unreferenced objects older than grace period (default 7 days).
-   * In dryRun mode, only lists keys without deleting.
+   * Publish multiple blog posts in bulk.
+   * Uploads all assets and updates blog/manifest.json under a single atomic lock.
    */
-  async gc(dryRun = true) {
-    const run = async (assertHeld: () => Promise<void> = async () => {}) => {
-      const state = await this.snapshot();
-      if (!state.head) {
-        throw new Error("No active head; refusing GC");
+  async publishBulk(items: BulkPublishItem[]): Promise<BulkPublishResult> {
+    if (!items.length) {
+      return { total: 0, published: 0, failed: 0, results: [] };
+    }
+
+    type PreparedItem = {
+      file: string;
+      slug: string;
+      title: string;
+      url: string;
+      contentKey: string;
+      coverKey: string;
+      coverBytes?: Uint8Array;
+      coverMime?: string;
+      inlineImages: Record<string, InlineImage>;
+      meta: Post;
+      finalMarkdown: string;
+      assets: string[];
+    };
+
+    const prepared: PreparedItem[] = [];
+    const results: BulkPublishResult["results"] = [];
+    const existingManifest = await this.manifest(true);
+    const now = new Date().toISOString();
+
+    for (const item of items) {
+      try {
+        const raw = await readFile(item.file, "utf8");
+        const parsed = parsePost(raw, true);
+        const slug = parsed.meta.slug;
+        const baseDir = dirname(item.file);
+
+        const existingPost = existingManifest.posts.find(
+          (p) => p.meta.slug === slug,
+        );
+        const publishedAt =
+          existingPost?.meta.publishedAt || parsed.meta.publishedAt || now;
+        const updatedAt = now;
+
+        // Resolve cover image
+        let coverPath = item.cover;
+        if (!coverPath && parsed.meta.cover.src.startsWith("./")) {
+          coverPath = resolve(baseDir, parsed.meta.cover.src);
+        }
+
+        let coverKey = parsed.meta.cover.src;
+        let coverBytes: Uint8Array | undefined;
+        let coverMime: string | undefined;
+
+        if (coverPath) {
+          coverBytes = await readFile(coverPath);
+          coverMime = imageType(coverBytes);
+          const ext =
+            extname(coverPath).toLowerCase() ||
+            (coverMime === "image/jpeg"
+              ? ".jpg"
+              : "." + coverMime.split("/")[1]);
+          coverKey = `blog/posts/${slug}/cover${ext}`;
+        } else if (
+          !coverKey.startsWith("https://") &&
+          !coverKey.startsWith("blog/posts/")
+        ) {
+          throw new Error(
+            `Cover image required for "${slug}". Provide --cover <path> or frontmatter cover.src: ./cover.png, or an HTTPS URL.`,
+          );
+        }
+
+        // Resolve inline images
+        const inlineImages = await readInlineImages(baseDir, parsed.body);
+        const urlMap = new Map<string, string>();
+        const inlineAssets: string[] = [];
+
+        for (const [src, img] of Object.entries(inlineImages)) {
+          const assetKey = `blog/posts/${slug}/images/${img.filename}`;
+          urlMap.set(src, cdnUrl(assetKey));
+          inlineAssets.push(assetKey);
+        }
+
+        const rewrittenBody = rewriteImageUrls(parsed.body, urlMap);
+        const meta: Post = {
+          ...parsed.meta,
+          status: "published",
+          publishedAt,
+          updatedAt,
+          cover: {
+            src: coverKey,
+            alt: parsed.meta.cover.alt,
+          },
+        };
+
+        const finalMarkdown = serializePost(meta, rewrittenBody);
+        const contentKey = `blog/posts/${slug}/post.md`;
+        const assets = [
+          ...(coverBytes ? [coverKey] : []),
+          ...inlineAssets,
+        ];
+
+        prepared.push({
+          file: item.file,
+          slug,
+          title: meta.title,
+          url: siteUrl(`/blog/${slug}`),
+          contentKey,
+          coverKey,
+          coverBytes,
+          coverMime,
+          inlineImages,
+          meta,
+          finalMarkdown,
+          assets,
+        });
+      } catch (err) {
+        results.push({
+          file: item.file,
+          status: "failed",
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
+    }
 
-      const live = references(state.head, state.inventory);
-      const now = Date.now();
-      const retirement = new Map(
-        state.inventory.retired.map((r) => [r.key, Date.parse(r.at)]),
+    if (prepared.length === 0) {
+      return {
+        total: items.length,
+        published: 0,
+        failed: results.length,
+        results,
+      };
+    }
+
+    // Acquire lock once for the entire bulk upload
+    const lockOwner = await this.acquireLock();
+    try {
+      const manifest = await this.manifest(true);
+      const manifestPostsMap = new Map<string, Entry>(
+        manifest.posts.map((p) => [p.meta.slug, p]),
       );
 
-      const candidates = (await this.storage.list(OBJECT_PREFIX)).filter(
-        (o) =>
-          !live.has(o.key) &&
-          now - (retirement.get(o.key) ?? o.modified) > GRACE_MS,
-      );
+      for (const prep of prepared) {
+        try {
+          // 1. Upload cover if local
+          if (prep.coverBytes && prep.coverMime) {
+            await this.storage.put(
+              prep.coverKey,
+              prep.coverBytes,
+              prep.coverMime,
+            );
+          }
 
-      if (!dryRun) {
-        for (const object of candidates) {
-          await assertHeld();
-          await this.storage.remove(object.key);
+          // 2. Upload inline images
+          for (const img of Object.values(prep.inlineImages)) {
+            const key = `blog/posts/${prep.slug}/images/${img.filename}`;
+            await this.storage.put(key, img.bytes, img.type);
+          }
+
+          // 3. Upload markdown post
+          await this.storage.put(
+            prep.contentKey,
+            bytes(prep.finalMarkdown),
+            "text/markdown; charset=utf-8",
+          );
+
+          const entry: Entry = {
+            meta: prep.meta,
+            key: prep.contentKey as `blog/posts/${string}/post.md`,
+            revision: hash(prep.finalMarkdown),
+            assets: prep.assets as any,
+          };
+
+          // 4. Update manifest map
+          manifestPostsMap.set(prep.slug, entry);
+
+          // 5. Update DB mirror
+          await syncPostToDb(entry);
+
+          results.push({
+            file: prep.file,
+            slug: prep.slug,
+            title: prep.title,
+            url: prep.url,
+            contentKey: prep.contentKey,
+            cover: prep.coverKey,
+            status: "ok",
+          });
+        } catch (err) {
+          results.push({
+            file: prep.file,
+            status: "failed",
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       }
 
-      return { dryRun, keys: candidates.map((c) => c.key) };
+      // 6. Write updated manifest
+      const updatedPosts = Array.from(manifestPostsMap.values()).sort(
+        (a, b) =>
+          Date.parse(b.meta.publishedAt!) - Date.parse(a.meta.publishedAt!) ||
+          a.meta.slug.localeCompare(b.meta.slug),
+      );
+
+      const newManifest: Manifest = {
+        version: 1,
+        posts: updatedPosts,
+      };
+
+      manifestSchema.parse(newManifest);
+      await this.storage.put(
+        MANIFEST_KEY,
+        bytes(JSON.stringify(newManifest, null, 2)),
+        "application/json",
+      );
+
+      const publishedCount = results.filter((r) => r.status === "ok").length;
+      return {
+        total: items.length,
+        published: publishedCount,
+        failed: items.length - publishedCount,
+        results,
+      };
+    } finally {
+      await this.releaseLock(lockOwner);
+    }
+  }
+
+  /**
+   * Publish a single blog post directly.
+   * Delegates to publishBulk for consistency and returns single-post result.
+   */
+  async publish(
+    filePath: string,
+    options: { coverPath?: string } = {},
+  ): Promise<PublishResult> {
+    const bulk = await this.publishBulk([
+      { file: filePath, cover: options.coverPath },
+    ]);
+    const first = bulk.results[0];
+
+    if (!first || first.status === "failed") {
+      throw new Error(first ? first.error : "Publish failed");
+    }
+
+    const manifest = await this.manifest(true);
+    const entry = manifest.posts.find((p) => p.meta.slug === first.slug);
+
+    return {
+      success: true,
+      slug: first.slug,
+      title: first.title,
+      url: first.url,
+      contentKey: first.contentKey,
+      cover: first.cover,
+      assets: (entry?.assets as string[]) || [],
     };
-
-    return dryRun ? run() : this.locked(run);
-  }
-}
-
-/**
- * Completely remove a draft across remote R2, PostgreSQL database,
- * catalog cache, and local workspace.
- */
-export async function rejectDraft(
-  id: string,
-  service?: BlogService,
-): Promise<{ id: string; slug?: string; removedFrom: string[] }> {
-  let slug: string | undefined;
-
-  try {
-    const w = await loadWorkspace(id);
-    slug = w.meta.slug;
-  } catch {
-    try {
-      const p = await workspacePath(id);
-      const state = JSON.parse(
-        await readFile(join(p, "state.json"), "utf8"),
-      ) as { originalSlug?: string };
-      slug = state.originalSlug;
-    } catch {}
   }
 
-  const removedFrom: string[] = [];
-
-  // 1. Remote R2 editorial inventory if present
-  if (slug) {
+  /** Unpublish a post by removing it from the published manifest. */
+  async unpublish(slug: string): Promise<{ success: true; slug: string }> {
+    const lockOwner = await this.acquireLock();
     try {
-      const svc = service || new BlogService(new R2Storage());
-      const snapshot = await svc.snapshot(true);
-      if (
-        snapshot.head &&
-        snapshot.inventory.posts.some((p) => p.meta.slug === slug)
-      ) {
-        const plan = await svc.plan([{ type: "delete", slug }]);
-        await svc.commit(plan, true);
-        removedFrom.push("remote");
+      const manifest = await this.manifest();
+      const exists = manifest.posts.some((p) => p.meta.slug === slug);
+      if (!exists) {
+        throw new Error(`Post "${slug}" is not currently published`);
       }
-    } catch {
-      // Remote R2 not configured or post was not in remote inventory
+
+      const updatedPosts = manifest.posts.filter((p) => p.meta.slug !== slug);
+      const newManifest: Manifest = {
+        version: 1,
+        posts: updatedPosts,
+      };
+
+      await this.storage.put(
+        MANIFEST_KEY,
+        bytes(JSON.stringify(newManifest, null, 2)),
+        "application/json",
+      );
+
+      await setDbPostStatus(slug, "draft");
+
+      return { success: true, slug };
+    } finally {
+      await this.releaseLock(lockOwner);
     }
   }
 
-  // 2. PostgreSQL database mirror if present
-  if (slug && process.env.DATABASE_URL) {
+  /** Delete a post from manifest, R2 storage, and DB mirror. */
+  async deletePost(
+    slug: string,
+  ): Promise<{ success: true; slug: string; deletedKeys: string[] }> {
+    const lockOwner = await this.acquireLock();
     try {
-      const [{ default: db }, { blogPosts }, { eq }] = await Promise.all([
-        import("../../lib/db"),
-        import("../../lib/db/blog-schema"),
-        import("drizzle-orm"),
-      ]);
-      await db.delete(blogPosts).where(eq(blogPosts.slug, slug));
-      removedFrom.push("database");
-    } catch {
-      // Database not reachable
+      const manifest = await this.manifest(true);
+      const updatedPosts = manifest.posts.filter((p) => p.meta.slug !== slug);
+
+      const newManifest: Manifest = {
+        version: 1,
+        posts: updatedPosts,
+      };
+
+      await this.storage.put(
+        MANIFEST_KEY,
+        bytes(JSON.stringify(newManifest, null, 2)),
+        "application/json",
+      );
+
+      // Delete all objects under blog/posts/<slug>/
+      const prefix = `blog/posts/${slug}/`;
+      const objects = await this.storage.list(prefix);
+      const deletedKeys: string[] = [];
+
+      for (const obj of objects) {
+        await this.storage.remove(obj.key);
+        deletedKeys.push(obj.key);
+      }
+
+      await deleteDbPost(slug);
+
+      return { success: true, slug, deletedKeys };
+    } finally {
+      await this.releaseLock(lockOwner);
     }
   }
 
-  // 3. Catalog cache
-  try {
-    const { articleCatalog } = await import("./catalog");
-    articleCatalog().invalidate();
-  } catch {}
-
-  // 4. Local workspace
-  try {
-    await cleanup(id);
-    removedFrom.push("local");
-  } catch {
-    // Already cleaned or not found
+  /** List all published posts from manifest. */
+  async list(): Promise<
+    Array<{
+      slug: string;
+      title: string;
+      category: string;
+      publishedAt: string | null;
+      cover: string;
+      url: string;
+    }>
+  > {
+    const manifest = await this.manifest(true);
+    return manifest.posts.map((p) => ({
+      slug: p.meta.slug,
+      title: p.meta.title,
+      category: p.meta.category,
+      publishedAt: p.meta.publishedAt,
+      cover: p.meta.cover.src,
+      url: siteUrl(`/blog/${p.meta.slug}`),
+    }));
   }
 
-  return { id, slug, removedFrom };
+  /** Initialize empty blog manifest. */
+  async initialize(): Promise<{ success: true; initialized: true }> {
+    const lockOwner = await this.acquireLock();
+    try {
+      const empty: Manifest = { version: 1, posts: [] };
+      await this.storage.put(
+        MANIFEST_KEY,
+        bytes(JSON.stringify(empty, null, 2)),
+        "application/json",
+      );
+      return { success: true, initialized: true };
+    } finally {
+      await this.releaseLock(lockOwner);
+    }
+  }
 }

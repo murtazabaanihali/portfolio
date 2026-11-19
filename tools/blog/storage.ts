@@ -105,9 +105,10 @@ export class R2Storage implements Storage {
           Key: key,
           Body: body,
           ContentType: type,
-          CacheControl: key.startsWith("blog/objects/")
-            ? "public, max-age=300"
-            : "no-store",
+          CacheControl:
+            key.startsWith("blog/posts/") || key.startsWith("blog/objects/")
+              ? "public, max-age=300"
+              : "no-store",
           IfMatch: condition?.match,
           IfNoneMatch: condition?.absent ? "*" : undefined,
         }),

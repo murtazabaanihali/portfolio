@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ReactMarkdown from "react-markdown";
@@ -167,14 +168,14 @@ export default async function Article({ params }: Props) {
               </div>
               <CopyLink url={url} />
             </div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <Image
               src={coverUrl(p.cover.src)}
               alt={p.cover.alt}
               width={1200}
               height={675}
-              fetchPriority="high"
+              priority
               className="mt-8 aspect-video w-full rounded-xl object-cover"
+              unoptimized
             />
           </header>
 
@@ -218,10 +219,19 @@ export default async function Article({ params }: Props) {
                     </a>
                   </h3>
                 ),
-                // eslint-disable-next-line @next/next/no-img-element
-                img: ({ src, alt }) => (
-                  <img src={src} alt={alt || ""} loading="lazy" />
-                ),
+                img: ({ src, alt }) => {
+                  if (typeof src !== "string") return null;
+                  return (
+                    <Image
+                      src={src}
+                      alt={alt || ""}
+                      width={1200}
+                      height={675}
+                      className="rounded-lg object-cover"
+                      unoptimized
+                    />
+                  );
+                },
                 table: ({ children }) => (
                   <div
                     className="table-scroll"
@@ -275,14 +285,13 @@ export default async function Article({ params }: Props) {
               {related.map(({ meta: r }) => (
                 <article key={r.slug} className="group">
                   <Link href={`/blog/${r.slug}`} className="block">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <Image
                       src={coverUrl(r.cover.src)}
                       alt={r.cover.alt}
                       width={400}
                       height={260}
-                      loading="lazy"
                       className="aspect-[3/2] w-full rounded-lg object-cover"
+                      unoptimized
                     />
                     <time
                       dateTime={r.publishedAt!}

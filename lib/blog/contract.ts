@@ -10,7 +10,9 @@ import { categories, defaultAuthor } from "./config";
 
 export const slugSchema = z.string().min(1).max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   .refine(s => !["index", "rss", "category", "tag", "raw"].includes(s), "Reserved slug");
-export const objectKey = z.string().regex(/^blog\/objects\/[a-zA-Z0-9/_-]+(?:\.[a-z0-9]+)?$/);
+export const objectKey = z.string().regex(
+  /^blog\/(?:posts\/[a-z0-9-]+(?:\/(?:images\/[a-zA-Z0-9_-]+\.(?:png|jpg|jpeg|webp)|cover\.(?:png|jpg|jpeg|webp)|post\.md))|manifest\.json|objects\/[a-zA-Z0-9/_-]+(?:\.[a-z0-9]+)?)$/
+);
 const timestamp = z.iso.datetime({ offset: true });
 const plainText = z.string().trim().regex(/^[^\x00-\x1f\x7f]+$/, "Metadata must be single-line text without control characters");
 export const normalizeTag = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -21,13 +23,13 @@ export function safeUrl(value: string, image = false): boolean {
     return !url.username && !url.password && (url.protocol === "https:" || (!image && url.protocol === "mailto:"));
   } catch { return false; }
 }
-export const postSchema = z.object({
+export const postBaseSchema = z.object({
   version: z.literal(1),
   title: plainText.min(5).max(160),
   slug: slugSchema,
   description: plainText.min(30).max(320),
   author: plainText.min(1).max(120).default(defaultAuthor),
-  status: z.enum(["draft", "published"]),
+  status: z.enum(["draft", "published"]).default("published"),
   category: z.string().refine(v => categories.some(c => c.slug === v), "Unknown category"),
   tags: z.array(z.string().min(1).max(60)).max(12).default([])
     .transform(tags => [...new Set(tags.map(normalizeTag))].sort())
@@ -39,12 +41,13 @@ export const postSchema = z.object({
       /^\.\/cover\.(png|jpg|jpeg|webp)$/.test(s), "Use HTTPS, a managed object key, or ./cover.png/jpg/webp"),
     alt: plainText.min(5).max(300),
   }).strict(),
-}).strict().superRefine((p, ctx) => {
+}).strict();
+
+export const postSchema = postBaseSchema.superRefine((p, ctx) => {
   if (p.status === "published" && (!p.publishedAt || !p.updatedAt))
     ctx.addIssue({ code: "custom", message: "Published posts require publishedAt and updatedAt" });
   if (p.publishedAt && p.updatedAt && Date.parse(p.updatedAt) < Date.parse(p.publishedAt))
     ctx.addIssue({ code: "custom", message: "updatedAt cannot precede publishedAt" });
-
 });
 export type Post = z.infer<typeof postSchema>;
 export const entrySchema = z.object({
@@ -116,7 +119,7 @@ export function parsePost(raw: string, local = false): { meta: Post; body: strin
   if (!match) throw new Error("Expected YAML frontmatter and a nonempty Markdown body");
   const document = parseDocument(match[1], { uniqueKeys: true });
   if (document.errors.length) throw new Error(document.errors[0].message);
-  const meta = postSchema.parse(document.toJS({ maxAliasCount: 0 }));
+  const meta = (local ? postBaseSchema : postSchema).parse(document.toJS({ maxAliasCount: 0 }));
   if (!local && meta.cover.src.startsWith("./")) throw new Error("Local cover not resolved");
   const body = match[2].trim() + "\n";
   if (body.trim().length < 40) throw new Error("Article body is too short");

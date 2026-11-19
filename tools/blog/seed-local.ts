@@ -8,7 +8,7 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { serializePost, type Post, type Entry } from "../../lib/blog/contract";
-import { hash } from "./workspace";
+import { hash } from "./images";
 
 if (!process.argv.includes("--yes")) {
   throw new Error(
@@ -37,11 +37,11 @@ const meta: Post = {
 const body =
   "WORKER_SSR_ARTICLE_MARKER: This complete article body must appear without browser JavaScript.\n\n## First heading\n\nPlain Markdown and **strong text**.\n\n## Second heading\n\nA useful explanation.\n\n## Third heading\n\n| Feature | Status |\n| --- | --- |\n| HTML | Server rendered |\n\n## Fourth heading\n\nA final paragraph with enough content for a table of contents.";
 
-const prefix = "blog/objects/local-smoke/";
+const contentKey = "blog/posts/local-preview-fixture/post.md";
 const raw = serializePost(meta, body);
 const post: Entry = {
   meta,
-  key: prefix + "article.md",
+  key: contentKey as any,
   revision: hash(raw),
   assets: [],
 };
@@ -55,28 +55,11 @@ const draftMeta: Post = {
   updatedAt: null,
 };
 const draftRaw = serializePost(draftMeta, body);
-const draft: Entry = {
-  meta: draftMeta,
-  key: prefix + "draft.md",
-  revision: hash(draftRaw),
-  assets: [],
-};
 
 const objects: Record<string, string> = {
   [post.key]: raw,
-  [draft.key]: draftRaw,
-  [prefix + "manifest.json"]: JSON.stringify({ version: 1, posts: [post] }),
-  [prefix + "inventory.json"]: JSON.stringify({
-    version: 1,
-    posts: [draft, post],
-    retired: [],
-  }),
-  "blog/head.json": JSON.stringify({
-    version: 1,
-    commit: "local-smoke",
-    manifest: prefix + "manifest.json",
-    inventory: prefix + "inventory.json",
-  }),
+  "blog/posts/local-hidden-draft/post.md": draftRaw,
+  "blog/manifest.json": JSON.stringify({ version: 1, posts: [post] }),
 };
 
 const temp = await mkdtemp(join(tmpdir(), "blog-local-fixture-"));
