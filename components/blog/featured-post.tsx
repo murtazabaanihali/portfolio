@@ -12,7 +12,7 @@ export function FeaturedPost({ post }: { post: Post }) {
       <Link href={`/blog/${post.slug}`} className="block">
         <Card className="overflow-hidden transition-colors hover:border-foreground/30">
           <div className="grid md:grid-cols-2">
-            <div className="relative aspect-[16/10] bg-muted md:aspect-auto md:min-h-[320px]">
+            <div className="relative aspect-[16/10] bg-muted sm:aspect-[16/9] md:aspect-auto md:min-h-[300px]">
               {/* Public CDN images bypass Next image cache so no extra freshness TTL. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -23,9 +23,9 @@ export function FeaturedPost({ post }: { post: Post }) {
                 className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
               />
             </div>
-            <div className="flex flex-col justify-center p-6 sm:p-8 lg:p-10">
+            <div className="flex flex-col justify-center p-5 sm:p-7 lg:p-10">
               <div>
-                <Badge variant="secondary" className="mb-3">
+                <Badge variant="secondary" className="mb-2.5 sm:mb-3">
                   Latest
                 </Badge>
               </div>
@@ -42,10 +42,10 @@ export function FeaturedPost({ post }: { post: Post }) {
                   </>
                 )}
               </div>
-              <h2 className="mt-3 font-serif text-2xl font-bold leading-tight tracking-tight sm:text-3xl">
+              <h2 className="mt-2.5 font-serif text-xl font-bold leading-snug tracking-tight sm:mt-3 sm:text-2xl lg:text-3xl">
                 {post.title}
               </h2>
-              <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
+              <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground sm:mt-3 sm:line-clamp-3 sm:text-sm lg:text-base">
                 {post.description}
               </p>
             </div>
