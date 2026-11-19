@@ -172,10 +172,10 @@ export function BlogListing({
 
   return (
     <div ref={containerRef}>
-      <div className="grid gap-10 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="grid gap-6 sm:gap-8 lg:gap-10 lg:grid-cols-[260px_minmax(0,1fr)]">
         {/* Sidebar: search + categories (stacks on top on mobile) */}
-        <aside className="w-full">
-          <Card className="p-3 lg:sticky lg:top-28">
+        <aside className="w-full min-w-0">
+          <Card className="min-w-0 p-3 lg:sticky lg:top-28">
             <div className="relative">
               <Search
                 aria-hidden
@@ -187,7 +187,7 @@ export function BlogListing({
                 maxLength={200}
                 placeholder="Search articles…"
                 aria-label="Search posts"
-                className="h-9 pl-9 text-sm"
+                className="h-9 pl-9 text-base sm:text-sm"
               />
               {searchInput && (
                 <Button
@@ -205,7 +205,7 @@ export function BlogListing({
 
             <nav
               aria-label="Blog categories"
-              className="mt-3 flex gap-1.5 overflow-x-auto pb-1 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:pb-0 [scrollbar-width:none]"
+              className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1 pt-0.5 touch-pan-x lg:mx-0 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:px-0 lg:pb-0 lg:pt-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
               {categoryFilters.map((c) => {
                 const isActive = !tag && (category ?? "all") === c.slug;
@@ -216,7 +216,7 @@ export function BlogListing({
                     onClick={() => handleCategoryClick(c.slug === "all" ? undefined : c.slug)}
                     aria-current={isActive ? "page" : undefined}
                     className={
-                      "flex shrink-0 items-center justify-between gap-2 rounded-md px-3 py-2 text-sm transition-colors lg:shrink " +
+                      "flex shrink-0 items-center justify-between gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors lg:w-full lg:shrink lg:gap-2 lg:rounded-md lg:px-3 lg:py-2 lg:text-sm " +
                       (isActive
                         ? "bg-secondary font-medium text-secondary-foreground"
                         : "text-muted-foreground hover:bg-accent hover:text-accent-foreground")
@@ -224,7 +224,7 @@ export function BlogListing({
                   >
                     <span className="truncate">{c.name}</span>
                     {c.count > 0 && (
-                      <span className="tabular-nums text-muted-foreground/70">
+                      <span className="tabular-nums text-[11px] text-muted-foreground/70 lg:text-xs">
                         {c.count}
                       </span>
                     )}
@@ -238,7 +238,7 @@ export function BlogListing({
         {/* Main column: featured + posts */}
         <div className="min-w-0">
           {(hasActiveFilters || isPending) && (
-            <div className="mb-6 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:mb-6 sm:text-sm">
               {tag && <span>Tagged “{tag}”</span>}
               {category && <span>{activeCategoryName}</span>}
               {debouncedSearch && <span>Search: “{debouncedSearch}”</span>}
@@ -251,9 +251,9 @@ export function BlogListing({
                   variant="ghost"
                   size="sm"
                   onClick={handleClearAll}
-                  className="h-7 gap-1 px-2 text-muted-foreground"
+                  className="h-6 gap-1 px-2 text-xs text-muted-foreground sm:h-7"
                 >
-                  <X aria-hidden className="size-3.5" /> Clear
+                  <X aria-hidden className="size-3" /> Clear
                 </Button>
               )}
             </div>
@@ -299,7 +299,7 @@ export function BlogListing({
             {showPagination && (
               <nav
                 aria-label="Pagination"
-                className="mt-10 flex items-center justify-center gap-6 border-t border-border pt-8 text-sm"
+                className="mt-8 flex items-center justify-center gap-4 border-t border-border pt-6 text-sm sm:mt-10 sm:gap-6 sm:pt-8"
               >
                 {page > 1 ? (
                   <Button
@@ -315,7 +315,7 @@ export function BlogListing({
                     ← Newer
                   </span>
                 )}
-                <span className="text-muted-foreground">
+                <span className="text-xs text-muted-foreground sm:text-sm">
                   Page{" "}
                   <span className="tabular-nums text-foreground">{page}</span>
                 </span>
@@ -361,9 +361,9 @@ function PostList({
   return (
     <>
       {[...groups.entries()].map(([label, groupPosts]) => (
-        <section key={label} aria-label={label} className="mt-10">
-          <div className="flex items-center gap-4">
-            <h2 className="text-sm font-medium text-muted-foreground">
+        <section key={label} aria-label={label} className="mt-8 sm:mt-10">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <h2 className="text-xs sm:text-sm font-medium text-muted-foreground">
               {label}
             </h2>
             <Separator className="flex-1" />
