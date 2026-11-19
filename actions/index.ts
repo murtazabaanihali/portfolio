@@ -4,9 +4,23 @@ import { headers } from "next/headers";
 
 import { ProjectTag } from "@/lib/db/schema";
 import { sendContactMail } from "@/lib/resend";
-import { getProjectBySlugDB, getProjectsDB } from "@/lib/db/queries";
+import {
+    getProjectBySlugDB,
+    getProjectsDB,
+    getBlogPostsDB,
+    getBlogPostBySlugDB,
+    getRelatedBlogPostsDB,
+    type BlogQueryParamsDB,
+} from "@/lib/db/queries";
+import { type BlogPostCategory } from "@/lib/db/schema";
 import { checkEmailRateLimit, getClientIp } from "@/lib/ratelimit";
 import { withRedisCache, isDynamicServerError } from "@/lib/cache";
+import {
+    BLOG_PAGE_SIZE,
+    BLOG_CACHE_TTL,
+    BLOG_SEARCH_CACHE_TTL,
+    BLOG_CACHE_KEYS,
+} from "@/lib/constants";
 
 export const contactMe = async (form: FormData) => {
     try {
@@ -73,5 +87,74 @@ export const getProjectBySlug = async (slug: string) => {
         if (isDynamicServerError(error)) throw error;
         console.log("Error getting project by slug ", error);
         return null;
+    }
+};
+
+export type BlogQueryParams = BlogQueryParamsDB;
+
+export const getBlogPosts = async (params: BlogQueryParams = {}) => {
+    try {
+        const page = Math.max(1, params.page || 1);
+        const limit = Math.max(1, params.limit || BLOG_PAGE_SIZE);
+        const category = params.category?.trim() || "all";
+        const tag = params.tag?.trim() || "all";
+        const search = (params.search || "").slice(0, 200).trim();
+
+        const isSearch = search.length > 0;
+        const cacheKey = isSearch
+            ? BLOG_CACHE_KEYS.search(search, page, limit, category, tag)
+            : BLOG_CACHE_KEYS.list(page, limit, category, tag);
+        const ttl = isSearch ? BLOG_SEARCH_CACHE_TTL : BLOG_CACHE_TTL;
+
+        return await withRedisCache(cacheKey, ttl, async () => {
+            return getBlogPostsDB({
+                page,
+                limit,
+                category: category === "all" ? undefined : category,
+                tag: tag === "all" ? undefined : tag,
+                search: isSearch ? search : undefined,
+            });
+        });
+    } catch (error) {
+        if (isDynamicServerError(error)) throw error;
+        console.error("Error getting blog posts:", error);
+        return {
+            posts: [],
+            page: 1,
+            limit: BLOG_PAGE_SIZE,
+            hasMore: false,
+        };
+    }
+};
+
+export const getBlogPostBySlug = async (slug: string) => {
+    try {
+        return await withRedisCache(
+            BLOG_CACHE_KEYS.bySlug(slug),
+            BLOG_CACHE_TTL,
+            async () => getBlogPostBySlugDB(slug)
+        );
+    } catch (error) {
+        if (isDynamicServerError(error)) throw error;
+        console.error("Error getting blog post by slug:", error);
+        return null;
+    }
+};
+
+export const getRelatedBlogPosts = async (
+    slug: string,
+    category: string,
+    limit: number = 3
+) => {
+    try {
+        return await withRedisCache(
+            BLOG_CACHE_KEYS.related(slug, category),
+            BLOG_CACHE_TTL,
+            async () => getRelatedBlogPostsDB(slug, category as BlogPostCategory, limit)
+        );
+    } catch (error) {
+        if (isDynamicServerError(error)) throw error;
+        console.error("Error getting related blog posts:", error);
+        return [];
     }
 };

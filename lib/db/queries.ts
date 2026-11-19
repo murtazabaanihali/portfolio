@@ -1,10 +1,37 @@
-import { sql } from "drizzle-orm/sql";
+import { sql, eq, and, desc, ilike, type SQL } from "drizzle-orm";
 
 import db from "@/lib/db";
-import { projects, type ProjectTag } from "@/lib/db/schema";
+import {
+    projects,
+    blogPosts,
+    type ProjectTag,
+    type BlogPost,
+    type BlogPostCategory,
+} from "@/lib/db/schema";
 import { withRedisCache } from "@/lib/cache";
+import { BLOG_PAGE_SIZE } from "@/lib/constants";
+import type { Post } from "@/lib/blog/contract";
 
 const DB_CACHE_TTL = 7 * 24 * 3600; // 7 days (high TTL)
+
+export function blogPostToPost(post: BlogPost): Post {
+    return {
+        version: 1,
+        slug: post.slug,
+        title: post.title,
+        description: post.description,
+        author: post.author,
+        status: post.status as "published" | "draft",
+        category: post.category,
+        tags: post.tags,
+        publishedAt: post.publishedAt ? post.publishedAt.toISOString() : null,
+        updatedAt: post.updatedAt ? post.updatedAt.toISOString() : null,
+        cover: {
+            src: post.coverSrc,
+            alt: post.coverAlt,
+        },
+    };
+}
 
 export async function getProjectsDB(
     pageNumber: number = 1,
@@ -38,5 +65,94 @@ export async function getProjectBySlugDB(slug: string) {
                 createdAt: false,
             },
         });
+    });
+}
+
+export type BlogQueryParamsDB = {
+    page?: number;
+    limit?: number;
+    category?: string;
+    tag?: string;
+    search?: string;
+};
+
+export async function getBlogPostsDB(params: BlogQueryParamsDB = {}) {
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.max(1, params.limit || BLOG_PAGE_SIZE);
+    const offset = (page - 1) * limit;
+
+    const conditions: SQL[] = [eq(blogPosts.status, "published")];
+
+    if (params.category && params.category !== "all") {
+        conditions.push(eq(blogPosts.category, params.category as BlogPostCategory));
+    }
+
+    if (params.tag && params.tag !== "all") {
+        conditions.push(sql`${params.tag} = ANY(${blogPosts.tags})`);
+    }
+
+    if (params.search && params.search.trim()) {
+        conditions.push(ilike(blogPosts.title, `%${params.search.trim()}%`));
+    }
+
+    const whereClause = and(...conditions);
+
+    // Fetch limit + 1 rows to determine if more items exist without running count()
+    const rows = await db.query.blogPosts.findMany({
+        where: whereClause,
+        orderBy: [desc(blogPosts.publishedAt)],
+        limit: limit + 1,
+        offset,
+    });
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+    return {
+        posts: pageRows.map(blogPostToPost),
+        page,
+        limit,
+        hasMore,
+    };
+}
+
+export async function getBlogPostBySlugDB(slug: string) {
+    const post = await db.query.blogPosts.findFirst({
+        where: and(eq(blogPosts.slug, slug), eq(blogPosts.status, "published")),
+    });
+    if (!post) return null;
+    return {
+        ...blogPostToPost(post),
+        contentKey: post.contentKey,
+        revision: post.revision,
+    };
+}
+
+export async function getRelatedBlogPostsDB(
+    slug: string,
+    category: BlogPostCategory,
+    limit: number = 3
+) {
+    const rows = await db.query.blogPosts.findMany({
+        where: and(
+            eq(blogPosts.status, "published"),
+            eq(blogPosts.category, category),
+            sql`${blogPosts.slug} != ${slug}`
+        ),
+        orderBy: [desc(blogPosts.publishedAt)],
+        limit,
+    });
+    return rows.map(blogPostToPost);
+}
+
+export async function getBlogPostsForSitemapDB() {
+    return db.query.blogPosts.findMany({
+        where: eq(blogPosts.status, "published"),
+        columns: {
+            slug: true,
+            publishedAt: true,
+            updatedAt: true,
+        },
+        orderBy: [desc(blogPosts.publishedAt)],
     });
 }

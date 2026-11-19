@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import db from "@/lib/db";
 import { siteUrl } from "@/lib/blog/config";
-import { getPublished } from "@/lib/blog/store";
+import { getBlogPostsForSitemapDB } from "@/lib/db/queries";
 import { withRedisCache } from "@/lib/cache";
 export const revalidate = 604800; // 7 days (high TTL)
 
@@ -10,11 +10,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     withRedisCache("cache:sitemap:projects", 7 * 24 * 3600, () =>
       db.query.projects.findMany({ columns: { slug: true, createdAt: true, updatedAt: true } })
     ),
-    getPublished(),
+    withRedisCache("cache:sitemap:blogs", 7 * 24 * 3600, () =>
+      getBlogPostsForSitemapDB()
+    ),
   ]);
 
   const projects = projectsResult.status === "fulfilled" ? projectsResult.value : [];
-  const posts = blogResult.status === "fulfilled" ? blogResult.value.posts : [];
+  const posts = blogResult.status === "fulfilled" ? blogResult.value : [];
 
   return [
     { url: siteUrl(), changeFrequency: "weekly", priority: 1 },
@@ -25,7 +27,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...projects.map(p => ({ url: siteUrl("/projects/" + p.slug),
       ...(p.updatedAt || p.createdAt ? { lastModified: (p.updatedAt || p.createdAt)! } : {}),
       changeFrequency: "monthly" as const, priority: 0.7 })),
-    ...posts.map(({ meta: p }) => ({ url: siteUrl("/blog/" + p.slug),
-      lastModified: p.updatedAt || p.publishedAt!, changeFrequency: "monthly" as const, priority: 0.7 })),
+    ...posts.map(p => ({ url: siteUrl("/blog/" + p.slug),
+      lastModified: p.updatedAt ? p.updatedAt.toISOString() : (p.publishedAt ? p.publishedAt.toISOString() : undefined),
+      changeFrequency: "monthly" as const, priority: 0.7 })),
   ];
 }

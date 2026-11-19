@@ -166,9 +166,9 @@ export async function findPostsInDir(dir: string): Promise<string[]> {
   return posts.sort();
 }
 
-/** Sync blog post metadata to Neon PostgreSQL database mirror if DATABASE_URL is set. */
+/** Sync blog post metadata to Neon PostgreSQL database mirror if DATABASE_URL is set (skipped during test runs). */
 export async function syncPostToDb(entry: Entry): Promise<void> {
-  if (!process.env.DATABASE_URL) return;
+  if (process.env.NODE_ENV === "test" || !process.env.DATABASE_URL) return;
   try {
     const { default: db } = await import("../../lib/db");
     const { blogPosts } = await import("../../lib/db/blog-schema");
@@ -221,12 +221,12 @@ export async function syncPostToDb(entry: Entry): Promise<void> {
   }
 }
 
-/** Update blog post status in DB mirror. */
+/** Update blog post status in DB mirror (skipped during test runs). */
 export async function setDbPostStatus(
   slug: string,
   status: "draft" | "published",
 ): Promise<void> {
-  if (!process.env.DATABASE_URL) return;
+  if (process.env.NODE_ENV === "test" || !process.env.DATABASE_URL) return;
   try {
     const { default: db } = await import("../../lib/db");
     const { blogPosts } = await import("../../lib/db/blog-schema");
@@ -241,9 +241,9 @@ export async function setDbPostStatus(
   }
 }
 
-/** Delete blog post row from DB mirror. */
+/** Delete blog post row from DB mirror (skipped during test runs). */
 export async function deleteDbPost(slug: string): Promise<void> {
-  if (!process.env.DATABASE_URL) return;
+  if (process.env.NODE_ENV === "test" || !process.env.DATABASE_URL) return;
   try {
     const { default: db } = await import("../../lib/db");
     const { blogPosts } = await import("../../lib/db/blog-schema");
