@@ -16,6 +16,23 @@ const playfair = Playfair_Display({
 });
 
 const baseUrl = siteUrl();
+const themeStorageKey = "theme";
+
+// Keep this as a literal: the Cloudflare bundle adds helpers to next-themes'
+// serialized function that aren't available when it runs in the browser.
+const themeInitScript = `
+    (() => {
+        let theme;
+        try {
+            theme = localStorage.getItem(${JSON.stringify(themeStorageKey)});
+        } catch {}
+        if (theme !== "light" && theme !== "dark") {
+            theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.classList.add(theme);
+        document.documentElement.style.colorScheme = theme;
+    })();
+`;
 
 export const metadata: Metadata = {
     metadataBase: new URL(baseUrl),
@@ -79,6 +96,9 @@ export default function RootLayout({
 }) {
     return (
         <html lang="en" suppressHydrationWarning>
+            <head>
+                <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+            </head>
             {process.env.ANALYTICS_WEBSITE_ID && (
                 <Script
                     async
@@ -89,8 +109,10 @@ export default function RootLayout({
             <body className={`${inter.variable} ${playfair.variable} font-sans`}>
                 <ThemeProvider
                     attribute="class"
+                    storageKey={themeStorageKey}
                     defaultTheme="system"
                     enableSystem
+                    scriptProps={{ type: "text/plain" }}
                 >
                     <Navigation />
                     {children}
