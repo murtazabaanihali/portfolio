@@ -20,11 +20,11 @@ Prefer a majority of product-adjacent topics across the editorial calendar when 
 
 ### iReplyy — https://ireplyy.dhem.io/
 
-Maintained description: social-media reply automation and conversation management. Previously supplied landing-page descriptions include comment/DM automation, AI-assisted replies, a unified inbox/live chat, contacts and activity tracking. Murtaza is identified as its founder.
+Murtaza founded iReplyy, a social media automation and conversation management product with comment and DM automation, AI-assisted replies, live chat, contacts, and activity tracking.
 
 Natural fit: a reader managing social comments/DMs, planning human handoffs, following up with leads, or assessing reply automation. Explain the workflow and its trade-offs first; a relevant example may then name iReplyy with a contextual link and a plain ownership disclosure such as "my product, iReplyy".
 
-Not established: exact platform integrations, pricing, deliverability/reply quality, customer counts, time savings, performance, current API behavior, or which AI models it uses. Do not turn an AI model comparison into an alleged iReplyy implementation story.
+See the [iReplyy project brief](projects/ireplyy/README.md) for product capabilities, platform support, and architecture.
 
 ### Dhesend — https://dhesend.vercel.app/
 

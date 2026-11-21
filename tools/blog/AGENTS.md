@@ -239,7 +239,14 @@ await Bun.write("./cover.png", croppedPng);
 
 ---
 
-## 4. Writing Quality & Editorial Standards
+## 4. Reusable Project Context
+
+- **Build context**: For “Build context for `<project-name>` in this blog,” use the facts and links from the prompt and any supplied references. Reuse the existing slug, or create a lowercase kebab-case slug under `tools/blog/projects/`. Read any existing files first and update them in place; merge new facts rather than appending duplicates. Ask only if a missing or conflicting detail materially changes the brief. This request alone does not draft or publish a post.
+- **Keep it small**: Start with [`projects/README.md`](projects/README.md). Capture what the project does and for whom, notable shipped features, relevant stack or architecture decisions, useful trade-offs or workflows, and source links. Leave out empty sections, generic pitches, and implementation inventories. Add a short topic-specific file (e.g. `architecture.md`) only when it earns its own page; link it from the project README.
+- **Draft with it**: Before outlining a project-related post, read `projects/<project-slug>/README.md` and only the linked notes relevant to the angle. Use the editorial brief (`blog-context.md`, or `blog-context.example.md` if absent) for voice and product fit; maintain project-specific facts in the project folder. If sources disagree, flag the conflict and verify or omit the claim. If no project folder exists, rely on supplied or verified sources, not assumptions. Do not load unrelated project notes or force product mentions.
+- **Separate evidence from ideas**: Attribute owner-supplied facts and record source links when available. Label planned features and possible article angles; do not present them as shipped or tested. Recheck time-sensitive details (pricing, integrations, availability) before publication. Store only public-safe summaries: no credentials, customer data, or private source dumps. These files are authoring references, not publish inputs or attachments.
+
+## 5. Writing Quality & Editorial Standards
 
 - **Finished Reader-Facing Prose**: Write complete, well-reasoned articles. Avoid outlines, questionnaires, placeholders, or corporate filler.
 - **Engaging Voice**: Direct, conversational, and specific. Open with the substantive news, central argument, or tension—do not start with generic "In today's fast-paced digital world" openings.

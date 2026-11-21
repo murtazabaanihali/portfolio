@@ -26,6 +26,7 @@ Run from the repository root.
 - `lib/db/` — Drizzle schema and queries (Neon serverless driver). `blog_posts` is a metadata mirror for coverage/related lookup only; content serving and publishing stay R2-backed.
 - `drizzle/` — generated SQL migrations; do not hand-edit.
 - `tools/blog/` — local-only Bun authoring/publishing CLI for agents; excluded from app typecheck/lint and the Worker build (`next.config.mjs`).
+- `tools/blog/projects/<project-slug>/README.md` — reusable project facts for blog drafts. For project-context requests or project-related posts, follow [the blog agent guide](tools/blog/AGENTS.md).
 - `.env` / `.dev.vars` — local secrets, never committed or uploaded.
 
 ## Working Agreements
