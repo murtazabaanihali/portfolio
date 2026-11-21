@@ -15,16 +15,16 @@ export default function Loading() {
 
       <Separator className="mb-6 sm:mb-10" />
 
-      <div className="grid gap-6 sm:gap-8 lg:gap-10 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="grid gap-6 sm:gap-8 md:gap-10 md:grid-cols-[260px_minmax(0,1fr)]">
         {/* Sidebar skeleton */}
         <aside className="w-full min-w-0">
           <Card className="min-w-0 p-3">
             <Skeleton className="h-9 w-full" />
-            <div className="-mx-3 flex gap-1.5 overflow-hidden px-3 pt-3 lg:mx-0 lg:flex-col lg:gap-0.5 lg:px-0 lg:pt-3">
-              {Array.from({ length: 5 }, (_, i) => (
+            <div className="-mx-3 flex gap-3 overflow-hidden px-3 pt-3 md:mx-0 md:flex-col md:px-0 md:pt-3">
+              {Array.from({ length: 8 }, (_, i) => (
                 <Skeleton
                   key={i}
-                  className="h-7 w-20 shrink-0 rounded-full lg:h-8 lg:w-full lg:shrink lg:rounded-md"
+                  className="h-7 w-20 shrink-0 rounded-full md:h-8 md:w-full md:shrink md:rounded-md"
                 />
               ))}
             </div>
@@ -35,9 +35,9 @@ export default function Loading() {
         <div className="min-w-0 space-y-8 sm:space-y-10">
           {/* Featured post skeleton */}
           <Card className="overflow-hidden">
-            <div className="grid md:grid-cols-2">
-              <Skeleton className="aspect-[16/10] sm:aspect-[16/9] md:min-h-[300px]" />
-              <div className="flex flex-col justify-center p-5 sm:p-7 lg:p-10">
+            <div className="grid md:grid-cols-2 gap-2">
+              <Skeleton className="min-h-[300px]" />
+              <div className="flex flex-col justify-center p-5 sm:p-7 md:p-10">
                 <Skeleton className="h-5 w-16" />
                 <Skeleton className="mt-2.5 h-3.5 w-32 sm:mt-3 sm:h-4" />
                 <Skeleton className="mt-3 h-7 w-4/5 sm:mt-4 sm:h-8" />

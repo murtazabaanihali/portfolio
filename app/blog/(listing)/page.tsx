@@ -50,7 +50,7 @@ export default async function Blog({
   return (
     <main className="mx-auto w-full max-w-6xl px-4 pb-16 pt-24 sm:px-6 sm:pb-24 sm:pt-28 md:px-8">
       <header className="pb-6 sm:pb-8">
-        <h1 className="font-serif text-3xl font-bold leading-[1.15] tracking-tight sm:text-5xl lg:text-6xl">
+        <h1 className="font-serif text-3xl font-bold leading-[1.15] tracking-tight sm:text-5xl md:text-6xl">
           Notes from building software.
         </h1>
         <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:mt-4 sm:text-base md:text-lg">

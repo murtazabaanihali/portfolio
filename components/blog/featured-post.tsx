@@ -23,7 +23,7 @@ export function FeaturedPost({ post }: { post: Post }) {
                 className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
               />
             </div>
-            <div className="flex flex-col justify-center p-5 sm:p-7 lg:p-10">
+            <div className="flex flex-col justify-center p-5 sm:p-7 md:p-10">
               <div>
                 <Badge variant="secondary" className="mb-2.5 sm:mb-3">
                   Latest
@@ -42,10 +42,10 @@ export function FeaturedPost({ post }: { post: Post }) {
                   </>
                 )}
               </div>
-              <h2 className="mt-2.5 font-serif text-xl font-bold leading-snug tracking-tight sm:mt-3 sm:text-2xl lg:text-3xl">
+              <h2 className="mt-2.5 font-serif text-xl font-bold leading-snug tracking-tight sm:mt-3 sm:text-2xl md:text-3xl">
                 {post.title}
               </h2>
-              <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground sm:mt-3 sm:line-clamp-3 sm:text-sm lg:text-base">
+              <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground sm:mt-3 sm:line-clamp-3 sm:text-sm md:text-base">
                 {post.description}
               </p>
             </div>

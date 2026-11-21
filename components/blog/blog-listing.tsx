@@ -172,11 +172,11 @@ export function BlogListing({
 
   return (
     <div ref={containerRef}>
-      <div className="grid gap-6 sm:gap-8 lg:gap-10 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="grid gap-6 sm:gap-8 md:gap-10 md:grid-cols-[260px_minmax(0,1fr)]">
         {/* Sidebar: search + categories (stacks on top on mobile) */}
         <aside className="w-full min-w-0">
-          <Card className="min-w-0 p-3 lg:sticky lg:top-28">
-            <div className="relative">
+          <Card className="min-w-0 p-3 md:sticky md:top-28">
+            <div className="relative mb-2">
               <Search
                 aria-hidden
                 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -205,7 +205,7 @@ export function BlogListing({
 
             <nav
               aria-label="Blog categories"
-              className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1 pt-0.5 touch-pan-x lg:mx-0 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:px-0 lg:pb-0 lg:pt-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1 pt-0.5 touch-pan-x md:mx-0 md:flex-col md:gap-0.5 md:overflow-visible md:px-0 md:pb-0 md:pt-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
               {categoryFilters.map((c) => {
                 const isActive = !tag && (category ?? "all") === c.slug;
@@ -216,7 +216,7 @@ export function BlogListing({
                     onClick={() => handleCategoryClick(c.slug === "all" ? undefined : c.slug)}
                     aria-current={isActive ? "page" : undefined}
                     className={
-                      "flex shrink-0 items-center justify-between gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors lg:w-full lg:shrink lg:gap-2 lg:rounded-md lg:px-3 lg:py-2 lg:text-sm " +
+                      "flex shrink-0 items-center justify-between gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors md:w-full md:shrink md:gap-2 md:rounded-md md:px-3 md:py-2 md:text-sm " +
                       (isActive
                         ? "bg-secondary font-medium text-secondary-foreground"
                         : "text-muted-foreground hover:bg-accent hover:text-accent-foreground")
@@ -224,7 +224,7 @@ export function BlogListing({
                   >
                     <span className="truncate">{c.name}</span>
                     {c.count > 0 && (
-                      <span className="tabular-nums text-[11px] text-muted-foreground/70 lg:text-xs">
+                      <span className="tabular-nums text-[11px] text-muted-foreground/70 md:text-xs">
                         {c.count}
                       </span>
                     )}
