@@ -1,7 +1,7 @@
 # iReplyy
 
 - **Overview:** Murtaza Baanihali’s social media automation SaaS for creators, businesses, and agencies that handle repetitive comments and direct messages. A typical use case: someone comments “guide” on an Instagram post and receives the link in a private reply, while the team can follow up in the inbox.
-- **Public links:** [Live product](https://ireplyy.dhem.io/); [ireplyy.com](https://ireplyy.com/) is the short URL and permanently redirects there. [Portfolio project](https://dhem.io/projects/ireplyy).
+- **Public links:** [Live product](https://ireplyy.dhem.io/); [ireplyy.com](https://ireplyy.com/) is the short URL and permanently redirects there. [Portfolio case study](https://dhem.io/projects/ireplyy-social-automation-tool).
 
 ## Product capabilities
 
@@ -17,4 +17,4 @@
 
 ## Sources
 
-- The project owner confirmed the product facts. This brief draws on the public product pages and the local app, receiver, and message worker reviewed on 2026-11-21.
+- The project owner confirmed the product facts. This brief draws on the portfolio case study, public feature pages, and the app, receiver, and message worker in `apps/full-stack/ireplyy-saas` (`f24654f`).
