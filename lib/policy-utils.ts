@@ -1,6 +1,18 @@
-import privacyPolicyContent from "@/public/policies/privacy-policy.md";
-import termsOfServiceContent from "@/public/policies/terms-of-service.md";
+import { cdnUrl } from "@/lib/blog/config";
 
-export function getPolicyContent(type: "privacy" | "terms"): string {
-  return type === "privacy" ? privacyPolicyContent : termsOfServiceContent;
+const policyFiles = {
+  privacy: "privacy-policy.md",
+  terms: "terms-of-service.md",
+} as const;
+
+export async function getPolicyContent(type: keyof typeof policyFiles): Promise<string> {
+  const url = cdnUrl(`assets/plocies/${policyFiles[type]}`);
+  // Use the media CDN's cache without pinning policy content to an app build.
+  const response = await fetch(url, { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error(`Could not fetch the ${type} policy (HTTP ${response.status})`);
+  }
+
+  return response.text();
 }

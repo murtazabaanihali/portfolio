@@ -18,3 +18,13 @@ Welcome to my personal portfolio repository! This project showcases my skills, e
 - Shadcn UI
 - TypeScript
 - AWS Cloudfront
+
+## Policy documents
+
+`/privacy` and `/terms` render Markdown from the R2 bucket `portfolio` through
+`NEXT_PUBLIC_MEDIA_CDN_DOMAIN`. The Markdown is stored only in R2.
+
+To publish an update, upload the changed file to `assets/plocies/<filename>` in
+that bucket with content type `text/markdown; charset=utf-8`. Purge the updated
+file's public CDN URL if the change needs to appear immediately. The app does not
+need to be rebuilt for policy text changes.
