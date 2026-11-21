@@ -24,12 +24,33 @@ import {
   type Post,
   type Entry,
 } from "../../../lib/blog/contract";
-import { MANIFEST_KEY, HEAD_KEY, LOCK_KEY } from "../../../lib/blog/config";
+import { MANIFEST_KEY, HEAD_KEY, LOCK_KEY, siteUrl } from "../../../lib/blog/config";
 
 process.env.NODE_ENV = "test";
 delete process.env.DATABASE_URL;
 process.env.NEXT_PUBLIC_APP_URL = "https://portfolio.example.com";
 process.env.NEXT_PUBLIC_MEDIA_CDN_DOMAIN = "https://content.example.com";
+
+describe("canonical site URL", () => {
+  test("defaults to the live site and normalizes the retired host without changing preview origins", () => {
+    const previous = process.env.NEXT_PUBLIC_APP_URL;
+    try {
+      expect(siteUrl("/blog")).toBe("https://portfolio.example.com/blog");
+
+      process.env.NEXT_PUBLIC_APP_URL = "https://developer.dhem.io/";
+      expect(siteUrl("/sitemap.xml")).toBe("https://dev.dhem.io/sitemap.xml");
+
+      delete process.env.NEXT_PUBLIC_APP_URL;
+      expect(siteUrl("/blog/example")).toBe("https://dev.dhem.io/blog/example");
+
+      process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000";
+      expect(siteUrl("/robots.txt")).toBe("http://localhost:3000/robots.txt");
+    } finally {
+      if (previous === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
+      else process.env.NEXT_PUBLIC_APP_URL = previous;
+    }
+  });
+});
 
 const pngBytes = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY9sAAAAASUVORK5CYII=",

@@ -11,7 +11,7 @@ Prefer a majority of product-adjacent topics across the editorial calendar when 
 ## Author and brand facts
 
 - Murtaza Baanihali is a full-stack developer and solo founder. His work covers scoping, UX, implementation, testing and launch, with attention to performance, accessibility and maintainability.
-- Owner-supplied personal portfolio: https://developer.dhem.io. For internal article links, use canonical URLs supplied by the publishing catalog, not guessed hostnames.
+- Personal portfolio: https://dev.dhem.io. For internal article links, use canonical URLs supplied by the publishing catalog, not guessed hostnames.
 - Owner-supplied umbrella brand: DHEM, https://dhem.io. Almost all projects will live under it; individual products retain their own names and confirmed URLs. The owner previously said DHEM redirects to the portfolio and is intended to become a separate brand site. Verify the current destination before describing it as launched.
 - Do not infer a legal company status, shared accounts/billing/data, team, revenue, customers, credentials, years of experience or adoption numbers.
 - Writing under the author's name does not authorize fictional first-person anecdotes. "I'd choose X under these assumptions" is a reasoned opinion; "I tested X with our customers" requires a real supplied record.

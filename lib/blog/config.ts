@@ -25,7 +25,17 @@ export function origin(value: string | undefined, name: string): string {
   }
   return url.origin;
 }
-export const siteUrl = (path = "/") => new URL(path, origin(process.env.NEXT_PUBLIC_APP_URL, "NEXT_PUBLIC_APP_URL")).href;
+const canonicalOrigin = "https://dev.dhem.io";
+
+export function siteUrl(path = "/") {
+  const configuredOrigin = origin(
+    process.env.NEXT_PUBLIC_APP_URL ?? canonicalOrigin,
+    "NEXT_PUBLIC_APP_URL",
+  );
+  // A stale build setting must not publish canonical links to the retired host.
+  const base = configuredOrigin === "https://developer.dhem.io" ? canonicalOrigin : configuredOrigin;
+  return new URL(path, base).href;
+}
 export const cdnUrl = (key: string) => {
   const base = origin(process.env.NEXT_PUBLIC_MEDIA_CDN_DOMAIN, "NEXT_PUBLIC_MEDIA_CDN_DOMAIN");
   if (new URL(base).hostname.endsWith(".r2.dev")) throw new Error("Use an R2 custom domain, not r2.dev");
