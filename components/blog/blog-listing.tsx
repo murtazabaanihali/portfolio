@@ -1,23 +1,20 @@
 "use client";
 
-import { useEffect, useTransition, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { Loader2, Search, X } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PostListSkeleton } from "./post-list-skeleton";
 import { FeaturedPost } from "@/components/blog/featured-post";
 import { PostRow } from "@/components/blog/post-row";
 import { categories } from "@/lib/blog/config";
 import { BLOG_SEARCH_DEBOUNCE_MS } from "@/lib/constants";
-import { getBlogPosts, type BlogQueryParams } from "@/actions";
-
-type BlogPostsResult = Awaited<ReturnType<typeof getBlogPosts>>;
+import { useBlogPosts, type BlogPostsResult } from "@/swr/blog";
 
 interface BlogListingProps {
-  initialData: BlogPostsResult;
   initialCategory?: string;
   initialTag?: string;
   initialSearch?: string;
@@ -31,14 +28,11 @@ interface CategoryFilter {
 }
 
 export function BlogListing({
-  initialData,
   initialCategory,
   initialTag,
   initialSearch = "",
   initialPage = 1,
 }: BlogListingProps) {
-  const [isPending, startTransition] = useTransition();
-
   const [searchInput, setSearchInput] = useState(initialSearch);
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
   const [category, setCategory] = useState<string | undefined>(
@@ -46,19 +40,22 @@ export function BlogListing({
   );
   const [tag, setTag] = useState<string | undefined>(initialTag);
   const [page, setPage] = useState<number>(initialPage);
-  const [data, setData] = useState<BlogPostsResult>(initialData);
+  const { data, error, isLoading: isPending } = useBlogPosts({ page, category, tag, search: debouncedSearch });
 
-  const isFirstRender = useRef(true);
+  const scrollAfterFetch = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Debounce search input
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearch(searchInput.trim());
+      if (searchInput.trim() !== debouncedSearch) {
+        setPage(1);
+        setDebouncedSearch(searchInput.trim());
+      }
     }, BLOG_SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [searchInput]);
+  }, [searchInput, debouncedSearch]);
 
   // Update URL query string without full page reloads
   const updateUrl = useCallback(
@@ -76,56 +73,22 @@ export function BlogListing({
     []
   );
 
-  // Execute server action fetch when filters or search change
-  const executeFetch = useCallback(
-    (params: BlogQueryParams, shouldScroll = false) => {
-      startTransition(async () => {
-        const result = await getBlogPosts(params);
-        setData(result);
-        updateUrl(params.page || 1, params.category, params.tag, params.search);
-
-        if (shouldScroll && containerRef.current) {
-          containerRef.current.scrollIntoView({ behavior: "smooth" });
-        }
-      });
-    },
-    [updateUrl]
-  );
-
-  // Trigger fetch on debounced search, category, or tag change (resets to page 1)
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
+    updateUrl(page, category, tag, debouncedSearch);
+    if (!isPending && scrollAfterFetch.current) {
+      containerRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+      scrollAfterFetch.current = false;
     }
+  }, [page, category, tag, debouncedSearch, updateUrl, isPending]);
 
-    setPage(1);
-    executeFetch({
-      page: 1,
-      category,
-      tag,
-      search: debouncedSearch,
-    });
-  }, [debouncedSearch, category, tag, executeFetch]);
-
-  // Handle pagination page click
   const handlePageChange = (newPage: number) => {
-    if (newPage < 1 || (newPage > page && !data.hasMore) || newPage === page)
-      return;
+    scrollAfterFetch.current = true;
     setPage(newPage);
-    executeFetch(
-      {
-        page: newPage,
-        category,
-        tag,
-        search: debouncedSearch,
-      },
-      true
-    );
   };
 
   // Category click handler
   const handleCategoryClick = (catSlug?: string) => {
+    setPage(1);
     setCategory(catSlug === category ? undefined : catSlug);
   };
 
@@ -136,31 +99,28 @@ export function BlogListing({
     setCategory(undefined);
     setTag(undefined);
     setPage(1);
-    executeFetch({
-      page: 1,
-      category: undefined,
-      tag: undefined,
-      search: "",
-    });
   };
+
+  if (error) throw error;
+  const posts = data?.posts ?? [];
 
   const hasActiveFilters = Boolean(category || tag || debouncedSearch);
 
   // Featured post only shown on page 1 with no filters active
   const featured =
-    !hasActiveFilters && page === 1 && data.posts.length > 0
-      ? data.posts[0]
+    !hasActiveFilters && page === 1 && posts.length > 0
+      ? posts[0]
       : undefined;
 
-  const listedPosts = featured ? data.posts.slice(1) : data.posts;
-  const showPagination = page > 1 || data.hasMore;
+  const listedPosts = featured ? posts.slice(1) : posts;
+  const showPagination = page > 1 || data?.hasMore;
 
   // Sidebar category filters: all categories with post counts from the current
   // result set; "All" gets the total count of posts on this query.
   const categoryFilters: CategoryFilter[] = [
-    { slug: "all", name: "All", count: data.posts.length },
+    { slug: "all", name: "All", count: posts.length },
     ...categories.map((c) => {
-      const count = data.posts.filter((p) => p.category === c.slug).length;
+      const count = posts.filter((p) => p.category === c.slug).length;
       return { slug: c.slug, name: c.name, count };
     }),
   ];
@@ -223,7 +183,7 @@ export function BlogListing({
                     }
                   >
                     <span className="truncate">{c.name}</span>
-                    {c.count > 0 && (
+                    {!isPending && c.count > 0 && (
                       <span className="tabular-nums text-[11px] text-muted-foreground/70 md:text-xs">
                         {c.count}
                       </span>
@@ -237,13 +197,15 @@ export function BlogListing({
 
         {/* Main column: featured + posts */}
         <div className="min-w-0">
-          {(hasActiveFilters || isPending) && (
+          {(hasActiveFilters || (isPending && data)) && (
             <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:mb-6 sm:text-sm">
               {tag && <span>Tagged “{tag}”</span>}
               {category && <span>{activeCategoryName}</span>}
               {debouncedSearch && <span>Search: “{debouncedSearch}”</span>}
-              {isPending && (
-                <Loader2 className="size-3.5 animate-spin text-primary" />
+              {data && isPending && (
+                <span role="status" className="inline-flex items-center gap-1.5">
+                  <Loader2 aria-hidden="true" className="size-3.5 motion-safe:animate-spin text-primary" /> Updating articles…
+                </span>
               )}
               {hasActiveFilters && (
                 <Button
@@ -260,11 +222,14 @@ export function BlogListing({
           )}
 
           <div
+            aria-busy={isPending}
             className={`transition-opacity duration-200 ${
-              isPending ? "opacity-60 pointer-events-none" : "opacity-100"
+              isPending && data?.posts.length ? "opacity-75" : "opacity-100"
             }`}
           >
-            {data.posts.length === 0 ? (
+            {!data || (!posts.length && isPending) ? (
+              <PostListSkeleton featured={!hasActiveFilters && page === 1} />
+            ) : !posts.length ? (
               <section className="py-20 text-center">
                 <h2 className="font-serif text-lg font-semibold tracking-tight">
                   {hasActiveFilters
@@ -306,6 +271,7 @@ export function BlogListing({
                     type="button"
                     variant="link"
                     size="sm"
+                    disabled={isPending}
                     onClick={() => handlePageChange(page - 1)}
                   >
                     ← Newer
@@ -319,11 +285,12 @@ export function BlogListing({
                   Page{" "}
                   <span className="tabular-nums text-foreground">{page}</span>
                 </span>
-                {data.hasMore ? (
+                {data?.hasMore ? (
                   <Button
                     type="button"
                     variant="link"
                     size="sm"
+                    disabled={isPending}
                     onClick={() => handlePageChange(page + 1)}
                   >
                     Older →
@@ -346,7 +313,7 @@ export function BlogListing({
 function PostList({
   posts,
 }: {
-  posts: Awaited<ReturnType<typeof getBlogPosts>>["posts"];
+  posts: BlogPostsResult["posts"];
 }) {
   if (posts.length === 0) return null;
 

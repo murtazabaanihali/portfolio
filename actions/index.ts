@@ -71,7 +71,7 @@ export const getProjects = async (pageNumber: number = 1, tag?: ProjectTag) => {
     } catch (error) {
         if (isDynamicServerError(error)) throw error;
         console.log("Error getting projects ", error);
-        return { projects: [], more: false };
+        throw error;
     }
 };
 
@@ -81,12 +81,12 @@ export const getProjectBySlug = async (slug: string) => {
         const ttl = 7 * 24 * 3600; // 7 days (high TTL)
 
         return await withRedisCache(cacheKey, ttl, async () => {
-            return getProjectBySlugDB(slug);
+            return (await getProjectBySlugDB(slug)) ?? null;
         });
     } catch (error) {
         if (isDynamicServerError(error)) throw error;
         console.log("Error getting project by slug ", error);
-        return null;
+        throw error;
     }
 };
 
@@ -118,12 +118,7 @@ export const getBlogPosts = async (params: BlogQueryParams = {}) => {
     } catch (error) {
         if (isDynamicServerError(error)) throw error;
         console.error("Error getting blog posts:", error);
-        return {
-            posts: [],
-            page: 1,
-            limit: BLOG_PAGE_SIZE,
-            hasMore: false,
-        };
+        throw error;
     }
 };
 

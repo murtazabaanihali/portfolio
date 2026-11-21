@@ -1,113 +1,33 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use } from "react";
+import { notFound } from "next/navigation";
+import { useArticle, useRelatedPosts } from "@/swr/blog";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import { ArrowLeft } from "lucide-react";
 
+import { ArticleSkeleton } from "@/components/blog/article-skeleton";
 import { CopyLink } from "@/components/blog/copy-link";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Card } from "@/components/ui/card";
-import { getArticle } from "@/lib/blog/store";
-import { getRelatedBlogPosts } from "@/actions";
-import { articleInfo, jsonLd, slugSchema } from "@/lib/blog/contract";
-import {
-  categories,
-  coverUrl,
-  defaultAuthor,
-  siteUrl,
-} from "@/lib/blog/config";
+import { coverUrl, siteUrl } from "@/lib/blog/config";
 import { categoryName, formatDate } from "@/lib/blog/format";
 
-export const revalidate = 604800; // 7 days (high TTL)
-type Props = { params: Promise<{ slug: string }> };
-
-async function article(slug: string) {
-  if (!slugSchema.safeParse(slug).success) notFound();
-  const post = await getArticle(slug);
-  if (!post) notFound();
-  return post;
-}
-
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { meta: p } = await article((await params).slug);
-  const url = siteUrl("/blog/" + p.slug),
-    image = { url: coverUrl(p.cover.src), alt: p.cover.alt };
-  return {
-    title: p.title,
-    description: p.description,
-    authors: [{ name: p.author }],
-    keywords: p.tags,
-    alternates: { canonical: url, types: { "text/markdown": url + "/raw.md" } },
-    openGraph: {
-      type: "article",
-      title: p.title,
-      description: p.description,
-      url,
-      publishedTime: p.publishedAt!,
-      modifiedTime: p.updatedAt!,
-      authors: [p.author],
-      section: categories.find((c) => c.slug === p.category)?.name,
-      tags: p.tags,
-      images: [image],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: p.title,
-      description: p.description,
-      images: [image],
-    },
-  };
-}
-
-export default async function Article({ params }: Props) {
-  const { meta: p, body } = await article((await params).slug);
-  const { toc, minutes } = articleInfo(body);
+export default function Article({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params);
+  const { data: article, error } = useArticle(slug);
+  const { data: related = [], isLoading: loadingRelated } = useRelatedPosts(slug, article?.post.category);
+  if (error) throw error;
+  if (article === null) notFound();
+  if (!article) return <ArticleSkeleton />;
+  const { post: p, body, toc, minutes } = article;
   const url = siteUrl("/blog/" + p.slug);
-  const author = {
-    "@type": "Person",
-    name: p.author,
-    ...(p.author === defaultAuthor() ? { url: siteUrl("/#about") } : {}),
-  };
-  const related = await getRelatedBlogPosts(p.slug, p.category, 3);
-  const data = {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "BlogPosting",
-        "@id": url + "#article",
-        headline: p.title,
-        description: p.description,
-        mainEntityOfPage: url,
-        url,
-        image: coverUrl(p.cover.src),
-        author,
-        datePublished: p.publishedAt,
-        dateModified: p.updatedAt,
-        inLanguage: "en",
-        articleSection: categories.find((c) => c.slug === p.category)?.name,
-        keywords: p.tags.join(", "),
-        isAccessibleForFree: true,
-      },
-      {
-        "@type": "BreadcrumbList",
-        itemListElement: [
-          { "@type": "ListItem", position: 1, name: "Home", item: siteUrl() },
-          {
-            "@type": "ListItem",
-            position: 2,
-            name: "Blog",
-            item: siteUrl("/blog"),
-          },
-          { "@type": "ListItem", position: 3, name: p.title, item: url },
-        ],
-      },
-    ],
-  };
   const initials = p.author
     .split(/\s+/)
     .map((w) => w[0])
@@ -118,10 +38,6 @@ export default async function Article({ params }: Props) {
     <>
       <div className="mx-auto max-w-3xl px-5 pb-24 pt-28 sm:px-8">
         <article data-article className="min-w-0">
-          <script
-            type="application/ld+json"
-            dangerouslySetInnerHTML={{ __html: jsonLd(data) }}
-          />
           <header>
             <nav
               aria-label="Breadcrumb"
@@ -271,6 +187,7 @@ export default async function Article({ params }: Props) {
         </article>
       </div>
 
+      {loadingRelated && <p role="status" className="mx-auto max-w-3xl px-5 pb-24 text-muted-foreground">Loading related articles…</p>}
       {related.length > 0 && (
         <section
           aria-label="Related articles"
