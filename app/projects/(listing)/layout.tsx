@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import { ProjectsClientSide } from "@/components/projects";
-import { getProjects } from "@/actions";
 
 export const revalidate = 604800; // 7 days (high TTL)
 
@@ -19,12 +17,6 @@ export const metadata: Metadata = {
     },
 };
 
-export default async function ProjectsPage() {
-    const initialData = await getProjects(1);
-
-    return (
-        <main className="min-h-screen pt-40 md:pt-52 pb-20">
-            <ProjectsClientSide initialData={initialData} />
-        </main>
-    );
-};
+export default function Layout({ children }: { children: React.ReactNode }) {
+    return children;
+}

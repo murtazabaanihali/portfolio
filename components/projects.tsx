@@ -15,19 +15,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PROJECT_FILTER_MAP } from "@/components/constant";
 import { getImageFullURL } from "@/lib/utils";
-import { useProjects } from "@/lib/swr";
+import { ProjectGridSkeleton } from "./project-skeletons";
+import { useProjects } from "@/swr/projects";
 import { trackUmamiEvent } from "@/lib/analytics";
-import { getProjects } from "@/actions";
+import type { ProjectTag } from "@/lib/db/schema";
 
-type ProjectsData = Awaited<ReturnType<typeof getProjects>>;
-
-interface ProjectsClientSideProps {
-    initialData?: ProjectsData;
-}
-
-export const ProjectsClientSide = ({ initialData }: ProjectsClientSideProps) => {
-    const { data, isValidating, isLoading, loadMore, tag, onTag } =
-        useProjects(initialData);
+export const ProjectsClientSide = () => {
+    const { data, error, isValidating, isLoadingMore, isLoading, loadMore, tag, onTag } = useProjects();
+    if (error) return <p role="alert">Could not load projects.</p>;
 
     return (
         <div className="container mx-auto px-4 max-w-6xl">
@@ -44,7 +39,7 @@ export const ProjectsClientSide = ({ initialData }: ProjectsClientSideProps) => 
                     <Button
                         variant={!tag ? "default" : "outline"}
                         size="sm"
-                        onClick={() => onTag()}
+                        onClick={() => onTag(undefined)}
                     >
                         <Filter className="h-4 w-4" />
                         All Projects
@@ -54,7 +49,7 @@ export const ProjectsClientSide = ({ initialData }: ProjectsClientSideProps) => 
                             key={filterTag}
                             size="sm"
                             variant={tag === filterTag ? "default" : "outline"}
-                            onClick={() => onTag(filterTag as any)}
+                            onClick={() => onTag(filterTag as ProjectTag)}
                         >
                             {label}
                         </Button>
@@ -63,7 +58,9 @@ export const ProjectsClientSide = ({ initialData }: ProjectsClientSideProps) => 
             </div>
 
             <div>
-                {data?.projects?.length ? (
+                {isLoading && !data.projects ? (
+                    <ProjectGridSkeleton />
+                ) : data.projects?.length ? (
                     <div>
                         <div
                             id="projects"
@@ -137,20 +134,18 @@ export const ProjectsClientSide = ({ initialData }: ProjectsClientSideProps) => 
                                 <Button
                                     variant="secondary"
                                     onClick={loadMore}
-                                    disabled={isValidating || isLoading}
+                                    disabled={isValidating || isLoadingMore}
                                 >
-                                    {isValidating || isLoading
-                                        ? "Loading..."
+                                    {isLoadingMore
+                                        ? "Loading more projects…"
                                         : "Load more"}
                                 </Button>
                             )}
                         </div>
                     </div>
                 ) : (
-                    <p className="mt-8 text-center text-muted-foreground">
-                        {isValidating || isLoading
-                            ? "Loading..."
-                            : "No projects found."}
+                    <p role="status" className="mt-8 text-center text-muted-foreground">
+                        No projects found.
                     </p>
                 )}
             </div>

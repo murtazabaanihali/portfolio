@@ -49,6 +49,12 @@ const nextConfig = {
   },
   async headers() {
     return [
+      // Layout metadata is shared; filtered listing URLs should not be indexed.
+      ...["q", "category", "tag", "page"].map((key) => ({
+        source: "/blog",
+        has: [{ type: "query", key, value: ".+" }],
+        headers: [{ key: "X-Robots-Tag", value: "noindex, follow" }],
+      })),
       {
         source: "/blog/:path*",
         headers: [

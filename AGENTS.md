@@ -32,7 +32,8 @@ Run from the repository root.
 ## Working Agreements
 
 - Use `bun`/`bunx` for JavaScript/TypeScript; never `npm`/`npx`.
-- Create a new branch for project changes; do not commit directly to the default branch.
+- Stay on the current Git branch, including when it is not `main`. Do not create or switch branches unless the user explicitly asks.
+- Do not commit directly to the default branch.
 - `@/*` maps to the repo root (e.g. `@/lib`, `@/components`).
 - Adding blog categories: edit the `categories` list in `lib/blog/config.ts`; the DB enum in `lib/db/blog-schema.ts` must stay in sync via a migration.
 - Code style is prettier-like (4-space indent in portfolio code, 2-space in `lib/blog`); match the surrounding file.

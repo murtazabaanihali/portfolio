@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowLeft, ExternalLink } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ImageCarousel } from "@/components/image-carousel";
 import { GithubIcon } from "@/components/constant";
-import { useProjectDetails } from "@/lib/swr";
+import { useProjectDetails } from "@/swr/projects";
+import { ProjectDetailSkeleton } from "./project-skeletons";
 import Custom404 from "@/app/not-found";
 
 interface ProjectDetailProps {
@@ -16,25 +17,28 @@ interface ProjectDetailProps {
 }
 
 export function ProjectDetail({ slug }: ProjectDetailProps) {
-    const { data: project, isLoading } = useProjectDetails(slug);
+    const { data: project, error, isLoading } = useProjectDetails(slug);
 
+    if (error) return <p role="alert">Could not load this project.</p>;
     return (
         <div className="container mx-auto px-4 max-w-4xl">
-            {isLoading ? (
-                <div className="flex justify-center p-6 pt-40">
-                    <Loader2 className="size-10 animate-spin text-muted-foreground" />
+            {(isLoading || project) && (
+                <div className="mt-12">
+                    <Button asChild variant="ghost" size="sm" className="mb-4 -ml-3">
+                        <Link href="/projects">
+                            <ArrowLeft className="mr-2 h-4 w-4" />
+                            Back to Projects
+                        </Link>
+                    </Button>
                 </div>
+            )}
+            {isLoading ? (
+                <ProjectDetailSkeleton />
             ) : !project ? (
                 <Custom404 />
             ) : (
                 <>
-                    <div className="mb-8 mt-12">
-                        <Button asChild variant="ghost" size="sm" className="mb-4 -ml-3">
-                            <Link href="/projects">
-                                <ArrowLeft className="mr-2 h-4 w-4" />
-                                Back to Projects
-                            </Link>
-                        </Button>
+                    <div className="mb-8">
                         <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-3">
                             {project.title}
                         </h1>
