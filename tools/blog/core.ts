@@ -21,6 +21,7 @@ import {
   type Post,
 } from "../../lib/blog/contract";
 import { bytes, text, Conflict, R2Storage, type Storage } from "./storage";
+import { Redis } from "@upstash/redis";
 import {
   hash,
   imageType,
@@ -252,6 +253,32 @@ export async function deleteDbPost(slug: string): Promise<void> {
     await db.delete(blogPosts).where(eq(blogPosts.slug, slug));
   } catch (e) {
     console.warn("DB mirror delete warning:", e instanceof Error ? e.message : String(e));
+  }
+}
+
+/**
+ * Purge high-TTL Redis cache keys so new/updated content appears immediately.
+ * Silently skips if Upstash credentials are not configured.
+ */
+async function purgeRedisCache(): Promise<string[]> {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token || process.env.NODE_ENV === "test") return [];
+
+  try {
+    const redis = new Redis({ url, token });
+    const keys = [
+      "cache:blog:manifest",
+      "cache:sitemap:blogs",
+    ];
+    await redis.del(...keys);
+    return keys;
+  } catch (e) {
+    console.warn(
+      "Redis cache purge warning (content published successfully):",
+      e instanceof Error ? e.message : String(e),
+    );
+    return [];
   }
 }
 
@@ -597,11 +624,15 @@ export class BlogService {
       );
 
       const publishedCount = results.filter((r) => r.status === "ok").length;
+
+      const purgedKeys = await purgeRedisCache();
+
       return {
         total: items.length,
         published: publishedCount,
         failed: items.length - publishedCount,
         results,
+        ...(purgedKeys.length > 0 && { purgedCacheKeys: purgedKeys }),
       };
     } finally {
       await this.releaseLock(lockOwner);
@@ -876,11 +907,15 @@ export class BlogService {
       );
 
       const updatedCount = results.filter((r) => r.status === "ok").length;
+
+      const purgedKeys = await purgeRedisCache();
+
       return {
         total: items.length,
         updated: updatedCount,
         failed: items.length - updatedCount,
         results,
+        ...(purgedKeys.length > 0 && { purgedCacheKeys: purgedKeys }),
       };
     } finally {
       await this.releaseLock(lockOwner);
@@ -940,7 +975,13 @@ export class BlogService {
 
       await setDbPostStatus(slug, "draft");
 
-      return { success: true, slug };
+      const purgedKeys = await purgeRedisCache();
+
+      return {
+        success: true,
+        slug,
+        ...(purgedKeys.length > 0 && { purgedCacheKeys: purgedKeys }),
+      };
     } finally {
       await this.releaseLock(lockOwner);
     }
@@ -978,7 +1019,14 @@ export class BlogService {
 
       await deleteDbPost(slug);
 
-      return { success: true, slug, deletedKeys };
+      const purgedKeys = await purgeRedisCache();
+
+      return {
+        success: true,
+        slug,
+        deletedKeys,
+        ...(purgedKeys.length > 0 && { purgedCacheKeys: purgedKeys }),
+      };
     } finally {
       await this.releaseLock(lockOwner);
     }
