@@ -39,3 +39,5 @@ next-env.d.ts
 tools/blog/.work/*
 tools/blog/.work/
 /.pi/
+tools/blog/.work
+tools/blog/.work/
